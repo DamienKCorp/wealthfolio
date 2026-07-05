@@ -36,7 +36,10 @@ export {
 
 export {
   ValueHistoryDataGrid,
+  computeAmortizationSchedule,
+  serializeAmortizationNotes,
   type ValueHistoryEntry,
   type LiabilityAmortizationMeta,
+  type AmortizationRow,
 } from "./value-history-data-grid";
 export { ValueHistoryToolbar } from "./value-history-toolbar";

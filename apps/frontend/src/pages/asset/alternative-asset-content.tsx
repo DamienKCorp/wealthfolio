@@ -512,14 +512,40 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
     const originalAmount = origAmountStr ? parseFloat(origAmountStr) : null;
 
     if (!originalAmount || originalAmount <= 0) {
-      return { amountPaid: null, percentPaid: null, originalAmount: null, currentBalance };
+      return {
+        amountPaid: null,
+        percentPaid: null,
+        originalAmount: null,
+        currentBalance,
+        monthlyPayment: null,
+      };
     }
 
     const amountPaid = originalAmount - currentBalance;
     const percentPaid = amountPaid / originalAmount;
 
-    return { amountPaid, percentPaid, originalAmount, currentBalance };
-  }, [isLiability, holding.marketValue, metadata.original_amount, metadata.purchase_price]);
+    // Compute monthly payment if rate and term are available
+    const annualRate = parseFloat((metadata.interest_rate as string | undefined) ?? "0");
+    const termMonths = parseInt((metadata.loan_term_years as string | undefined) ?? "", 10) * 12;
+    let monthlyPayment: number | null = null;
+    if (!isNaN(termMonths) && termMonths > 0) {
+      const r = annualRate / 100 / 12;
+      monthlyPayment =
+        r === 0
+          ? originalAmount / termMonths
+          : (originalAmount * r) / (1 - Math.pow(1 + r, -termMonths));
+      monthlyPayment = Math.round(monthlyPayment * 100) / 100;
+    }
+
+    return { amountPaid, percentPaid, originalAmount, currentBalance, monthlyPayment };
+  }, [
+    isLiability,
+    holding.marketValue,
+    metadata.original_amount,
+    metadata.purchase_price,
+    metadata.interest_rate,
+    metadata.loan_term_years,
+  ]);
 
   // Determine if we should show a header with value info
   const showNetEquityHeader = netEquity !== null;
@@ -572,6 +598,17 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
                   {t("asset:altContent.percent_of_original", {
                     percent: formatPercent(liabilityProgress.percentPaid),
                   })}
+                </div>
+              )}
+              {liabilityProgress.monthlyPayment !== null && (
+                <div className="text-muted-foreground mt-1 text-xs font-normal">
+                  <AmountDisplay
+                    value={liabilityProgress.monthlyPayment}
+                    currency={holding.currency}
+                    isHidden={isBalanceHidden}
+                  />
+                  {" / "}
+                  {t("asset:altContent.monthly")}
                 </div>
               )}
             </div>
@@ -785,6 +822,30 @@ function getDetailRows(
       const interestRate = metadata.interest_rate as string | undefined;
       if (interestRate) {
         rows.push({ label: t("asset:altContent.interest_rate"), value: `${interestRate}%` });
+      }
+
+      // Monthly payment (computed from original amount, rate and term)
+      const mpOriginal = parseFloat(
+        ((metadata.original_amount ?? metadata.purchase_price) as string | undefined) ?? "",
+      );
+      const mpRate = parseFloat((metadata.interest_rate as string | undefined) ?? "0") / 100 / 12;
+      const mpTermMonths =
+        parseInt((metadata.loan_term_years as string | undefined) ?? "", 10) * 12;
+      if (!isNaN(mpOriginal) && mpOriginal > 0 && !isNaN(mpTermMonths) && mpTermMonths > 0) {
+        const monthlyPayment =
+          mpRate === 0
+            ? mpOriginal / mpTermMonths
+            : (mpOriginal * mpRate) / (1 - Math.pow(1 + mpRate, -mpTermMonths));
+        rows.push({
+          label: t("asset:altContent.monthly_payment"),
+          value: (
+            <AmountDisplay
+              value={Math.round(monthlyPayment * 100) / 100}
+              currency={holding.currency}
+              isHidden={isBalanceHidden}
+            />
+          ),
+        });
       }
 
       // Note: Linked asset is shown in its own section with LinkedAssetSection

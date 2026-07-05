@@ -53,7 +53,7 @@ export interface LiabilityAmortizationMeta {
  * One row of a computed amortization schedule.
  * autoNote stores machine tokens (e.g. "repaid:10|crossover") — never translated text.
  */
-interface AmortizationRow {
+export interface AmortizationRow {
   date: Date;
   balance: number;
   interest: number;
@@ -91,7 +91,7 @@ function translateAutoNote(
  * Returns one row per monthly anniversary, starting from month 1.
  * autoNote stores machine tokens, not translated text.
  */
-function computeAmortizationSchedule(meta: LiabilityAmortizationMeta): AmortizationRow[] {
+export function computeAmortizationSchedule(meta: LiabilityAmortizationMeta): AmortizationRow[] {
   const { originalAmount, annualInterestRate, originationDate, termMonths } = meta;
   const monthlyRate = annualInterestRate / 100 / 12;
   const rows: AmortizationRow[] = [];
@@ -191,7 +191,7 @@ const parseAmortizationNotes = (
 };
 
 // Serialize amortization data back into the notes field
-const serializeAmortizationNotes = (
+export const serializeAmortizationNotes = (
   interest: number | null,
   principal: number | null,
   autoNote: string,
