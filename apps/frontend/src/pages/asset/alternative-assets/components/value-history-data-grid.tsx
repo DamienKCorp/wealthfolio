@@ -1,10 +1,17 @@
 import { Button, DataGrid, Icons, useDataGrid } from "@wealthfolio/ui";
-import { useCallback, useMemo, useState } from "react";
+import type { CellValidationState } from "@wealthfolio/ui";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { Quote } from "@/lib/types";
 import { ValueHistoryToolbar } from "./value-history-toolbar";
-import { format } from "date-fns";
+import {
+  EarlyRepaymentDialog,
+  CloseLoanDialog,
+  type EarlyRepaymentResult,
+  type CloseLoanResult,
+} from "./loan-action-dialogs";
+import { format, addMonths, differenceInMonths } from "date-fns";
 
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const UTC_MIDNIGHT_REGEX = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.\d+)?Z$/;
@@ -32,6 +39,105 @@ const roundToDecimals = (value: number): number => {
 };
 
 /**
+ * Metadata needed to compute an amortization schedule for a liability.
+ */
+export interface LiabilityAmortizationMeta {
+  originalAmount: number;
+  annualInterestRate: number;
+  originationDate: Date;
+  /** Total number of months in the loan */
+  termMonths: number;
+}
+
+/**
+ * One row of a computed amortization schedule.
+ * autoNote stores machine tokens (e.g. "repaid:10|crossover") — never translated text.
+ */
+interface AmortizationRow {
+  date: Date;
+  balance: number;
+  interest: number;
+  principal: number;
+  autoNote: string;
+}
+
+/**
+ * Translate a pipe-separated autoNote token string into a human-readable string.
+ * Called at render time so it reacts to language changes.
+ */
+function translateAutoNote(
+  token: string,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  if (!token) return "";
+  return token
+    .split("|")
+    .map((tok) => {
+      if (tok.startsWith("repaid:")) {
+        return t("asset:valueHistory.note_repaid", { percent: tok.slice(7) });
+      }
+      if (tok === "crossover") return t("asset:valueHistory.note_crossover");
+      if (tok.startsWith("early_repayment:")) {
+        return t("asset:valueHistory.note_early_repayment", { amount: tok.slice(16) });
+      }
+      if (tok === "loan_closed") return t("asset:valueHistory.note_loan_closed");
+      return tok;
+    })
+    .join(" · ");
+}
+
+/**
+ * Compute a French amortization schedule (constant monthly payment).
+ * Returns one row per monthly anniversary, starting from month 1.
+ * autoNote stores machine tokens, not translated text.
+ */
+function computeAmortizationSchedule(meta: LiabilityAmortizationMeta): AmortizationRow[] {
+  const { originalAmount, annualInterestRate, originationDate, termMonths } = meta;
+  const monthlyRate = annualInterestRate / 100 / 12;
+  const rows: AmortizationRow[] = [];
+
+  // Monthly payment (annuité constante). Special-case 0% interest.
+  const monthlyPayment =
+    monthlyRate === 0
+      ? originalAmount / termMonths
+      : (originalAmount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -termMonths));
+
+  let balance = originalAmount;
+  let principalCrossoverDone = false;
+  let nextMilestonePercent = 10;
+
+  for (let m = 1; m <= termMonths; m++) {
+    const interest = roundToDecimals(balance * monthlyRate);
+    const principal = roundToDecimals(Math.min(monthlyPayment - interest, balance));
+    balance = roundToDecimals(balance - principal);
+    if (m === termMonths) balance = 0;
+
+    const tokens: string[] = [];
+
+    const repaidPercent = ((originalAmount - balance) / originalAmount) * 100;
+    while (nextMilestonePercent <= 100 && repaidPercent >= nextMilestonePercent) {
+      tokens.push(`repaid:${nextMilestonePercent}`);
+      nextMilestonePercent += 10;
+    }
+
+    if (!principalCrossoverDone && principal > interest) {
+      tokens.push("crossover");
+      principalCrossoverDone = true;
+    }
+
+    rows.push({
+      date: addMonths(originationDate, m - 1),
+      balance,
+      interest,
+      principal,
+      autoNote: tokens.join("|"),
+    });
+  }
+
+  return rows;
+}
+
+/**
  * Local representation of a value history entry for the data grid.
  * Maps from Quote but with simplified fields for alternative assets.
  */
@@ -39,6 +145,11 @@ export interface ValueHistoryEntry {
   id: string;
   date: Date;
   value: number;
+  interest: number | null;
+  principal: number | null;
+  /** Machine tokens for auto-generated notes (e.g. "repaid:10|crossover"). Never translated text. */
+  autoNote: string;
+  /** User-written notes */
   notes: string;
   currency: string;
   isNew?: boolean;
@@ -51,6 +162,8 @@ interface ValueHistoryDataGridProps {
   currency: string;
   /** Whether this is a liability (changes "Value" to "Balance" label) */
   isLiability?: boolean;
+  /** Amortization metadata — when present enables schedule generation and computed columns */
+  liabilityMeta?: LiabilityAmortizationMeta;
   /** Callback to save a quote */
   onSaveQuote: (quote: Quote) => void;
   /** Callback to delete a quote */
@@ -60,15 +173,51 @@ interface ValueHistoryDataGridProps {
 // Generate a temporary ID for new entries
 const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
+// Parse amortization data stored in quote notes as "__amort:interest=X;principal=Y;auto=TOKENS__"
+const parseAmortizationNotes = (
+  notes: string | null | undefined,
+): { interest: number | null; principal: number | null; autoNote: string; userNotes: string } => {
+  if (!notes) return { interest: null, principal: null, autoNote: "", userNotes: "" };
+  const match = /^__amort:interest=([\d.]+);principal=([\d.]+)(?:;auto=([^_]*))?__\n?(.*)/s.exec(
+    notes,
+  );
+  if (!match) return { interest: null, principal: null, autoNote: "", userNotes: notes };
+  return {
+    interest: parseFloat(match[1]),
+    principal: parseFloat(match[2]),
+    autoNote: match[3] ?? "",
+    userNotes: match[4] ?? "",
+  };
+};
+
+// Serialize amortization data back into the notes field
+const serializeAmortizationNotes = (
+  interest: number | null,
+  principal: number | null,
+  autoNote: string,
+  userNotes: string,
+): string | undefined => {
+  if (interest === null || principal === null) return userNotes || undefined;
+  const autoSegment = autoNote ? `;auto=${autoNote}` : "";
+  const prefix = `__amort:interest=${interest};principal=${principal}${autoSegment}__`;
+  return userNotes ? `${prefix}\n${userNotes}` : prefix;
+};
+
 // Convert Quote to ValueHistoryEntry with rounding
-const toValueHistoryEntry = (quote: Quote): ValueHistoryEntry => ({
-  id: quote.id,
-  date: parseCalendarDate(quote.timestamp),
-  value: roundToDecimals(quote.close),
-  notes: quote.notes ?? "",
-  currency: quote.currency,
-  isNew: false,
-});
+const toValueHistoryEntry = (quote: Quote): ValueHistoryEntry => {
+  const { interest, principal, autoNote, userNotes } = parseAmortizationNotes(quote.notes);
+  return {
+    id: quote.id,
+    date: parseCalendarDate(quote.timestamp),
+    value: roundToDecimals(quote.close),
+    interest,
+    principal,
+    autoNote,
+    notes: userNotes,
+    currency: quote.currency,
+    isNew: false,
+  };
+};
 
 // Convert ValueHistoryEntry back to Quote for saving
 const toQuote = (entry: ValueHistoryEntry, symbol: string): Quote => {
@@ -86,7 +235,7 @@ const toQuote = (entry: ValueHistoryEntry, symbol: string): Quote => {
     close: entry.value,
     adjclose: entry.value,
     currency: entry.currency,
-    notes: entry.notes || undefined,
+    notes: serializeAmortizationNotes(entry.interest, entry.principal, entry.autoNote, entry.notes),
   };
 };
 
@@ -95,6 +244,9 @@ const createDraftEntry = (currency: string): ValueHistoryEntry => ({
   id: generateTempId(),
   date: new Date(),
   value: 0,
+  interest: null,
+  principal: null,
+  autoNote: "",
   notes: "",
   currency,
   isNew: true,
@@ -104,6 +256,7 @@ export function ValueHistoryDataGrid({
   data,
   currency,
   isLiability = false,
+  liabilityMeta,
   onSaveQuote,
   onDeleteQuote,
 }: ValueHistoryDataGridProps) {
@@ -130,6 +283,147 @@ export function ValueHistoryDataGrid({
 
   // Get assetId from first quote or use empty string
   const symbol = data[0]?.assetId ?? "";
+
+  // Whether amortization schedule can be generated
+  const canGenerateSchedule = isLiability && liabilityMeta !== undefined;
+
+  // Generate full amortization schedule and replace current entries
+  const handleGenerateSchedule = useCallback(() => {
+    if (!liabilityMeta) return;
+    const schedule = computeAmortizationSchedule(liabilityMeta);
+    const generated: ValueHistoryEntry[] = schedule.map((row) => ({
+      id: generateTempId(),
+      date: row.date,
+      value: row.balance,
+      interest: row.interest,
+      principal: row.principal,
+      autoNote: row.autoNote,
+      notes: "",
+      currency,
+      isNew: true,
+    }));
+    setLocalEntries(generated);
+    setDirtyIds(new Set(generated.map((e) => e.id)));
+    setDeletedIds(new Set());
+  }, [liabilityMeta, currency, data]);
+
+  // Dialog open states
+  const [earlyRepaymentOpen, setEarlyRepaymentOpen] = useState(false);
+  const [closeLoanOpen, setCloseLoanOpen] = useState(false);
+
+  // Handle early repayment: insert a row with reduced balance + regenerate future schedule
+  const handleEarlyRepayment = useCallback(
+    (result: EarlyRepaymentResult) => {
+      if (!liabilityMeta) return;
+
+      // Find the current balance at the repayment date (last entry on or before date)
+      const sorted = [...localEntries].sort((a, b) => a.date.getTime() - b.date.getTime());
+      const prev = sorted.filter((e) => e.date <= result.date).at(-1);
+      const currentBalance = prev?.value ?? liabilityMeta.originalAmount;
+      const newBalance = Math.max(0, currentBalance - result.amount);
+
+      // Insert the early repayment row
+      const repaymentEntry: ValueHistoryEntry = {
+        id: generateTempId(),
+        date: result.date,
+        value: newBalance,
+        interest: null,
+        principal: null,
+        autoNote: `early_repayment:${result.amount}`,
+        notes: "",
+        currency,
+        isNew: true,
+      };
+
+      // Months elapsed from origination to repayment date
+      const monthsElapsed = differenceInMonths(result.date, liabilityMeta.originationDate);
+      // Remaining months depends on mode
+      const originalRemaining = liabilityMeta.termMonths - monthsElapsed;
+      let remainingMonths: number;
+      if (result.mode === "reduce_payment") {
+        // Same remaining duration, smaller payment
+        remainingMonths = Math.max(1, originalRemaining);
+      } else {
+        // Recalculate how many months to pay off newBalance with same monthly payment
+        const monthlyRate = liabilityMeta.annualInterestRate / 100 / 12;
+        if (monthlyRate === 0 || newBalance <= 0) {
+          remainingMonths = Math.max(1, originalRemaining);
+        } else {
+          const monthlyPayment =
+            (liabilityMeta.originalAmount * monthlyRate) /
+            (1 - Math.pow(1 + monthlyRate, -liabilityMeta.termMonths));
+          remainingMonths = Math.max(
+            1,
+            Math.ceil(
+              -Math.log(1 - (newBalance * monthlyRate) / monthlyPayment) /
+                Math.log(1 + monthlyRate),
+            ),
+          );
+        }
+      }
+
+      // Regenerate the future schedule from the new balance
+      const newMeta: LiabilityAmortizationMeta = {
+        ...liabilityMeta,
+        originalAmount: newBalance,
+        originationDate: result.date,
+        termMonths: remainingMonths,
+      };
+      const futureSchedule = computeAmortizationSchedule(newMeta);
+      const futureEntries: ValueHistoryEntry[] = futureSchedule.map((row) => ({
+        id: generateTempId(),
+        date: row.date,
+        value: row.balance,
+        interest: row.interest,
+        principal: row.principal,
+        autoNote: row.autoNote,
+        notes: "",
+        currency,
+        isNew: true,
+      }));
+
+      // Keep past entries (before repayment date), drop future ones already generated
+      const pastEntries = localEntries.filter((e) => e.date < result.date);
+      const newEntries = [...pastEntries, repaymentEntry, ...futureEntries];
+
+      setLocalEntries(newEntries);
+      setDirtyIds(new Set(newEntries.filter((e) => e.isNew).map((e) => e.id)));
+      // Mark removed future entries (non-new, date >= repayment) for deletion
+      const removedIds = localEntries
+        .filter((e) => !e.isNew && e.date >= result.date)
+        .map((e) => e.id);
+      setDeletedIds(new Set(removedIds));
+    },
+    [liabilityMeta, localEntries, currency],
+  );
+
+  // Handle loan closure: insert balance=0 row and drop all future entries
+  const handleCloseLoan = useCallback(
+    (result: CloseLoanResult) => {
+      const closureEntry: ValueHistoryEntry = {
+        id: generateTempId(),
+        date: result.date,
+        value: 0,
+        interest: null,
+        principal: null,
+        autoNote: "loan_closed",
+        notes: "",
+        currency,
+        isNew: true,
+      };
+
+      const pastEntries = localEntries.filter((e) => e.date < result.date);
+      const newEntries = [...pastEntries, closureEntry];
+
+      setLocalEntries(newEntries);
+      setDirtyIds(new Set(newEntries.filter((e) => e.isNew).map((e) => e.id)));
+      const removedIds = localEntries
+        .filter((e) => !e.isNew && e.date >= result.date)
+        .map((e) => e.id);
+      setDeletedIds(new Set(removedIds));
+    },
+    [localEntries, currency],
+  );
 
   // Column definitions
   const columnHelper = createColumnHelper<ValueHistoryEntry>();
@@ -163,10 +457,59 @@ export function ValueHistoryDataGrid({
         size: 180,
         meta: { cell: { variant: "number", min: 0 } },
       }),
+      ...(isLiability
+        ? [
+            columnHelper.accessor("interest", {
+              header: t("asset:valueHistory.interest"),
+              size: 150,
+              enableSorting: false,
+              cell: ({ getValue }) => {
+                const v = getValue();
+                return v !== null && v !== undefined ? (
+                  <span className="flex size-full items-center justify-end tabular-nums">
+                    {v.toFixed(2)}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground flex size-full items-center justify-end text-xs">
+                    —
+                  </span>
+                );
+              },
+            }),
+            columnHelper.accessor("principal", {
+              header: t("asset:valueHistory.principal"),
+              size: 150,
+              enableSorting: false,
+              cell: ({ getValue }) => {
+                const v = getValue();
+                return v !== null && v !== undefined ? (
+                  <span className="flex size-full items-center justify-end tabular-nums">
+                    {v.toFixed(2)}
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground flex size-full items-center justify-end text-xs">
+                    —
+                  </span>
+                );
+              },
+            }),
+          ]
+        : []),
       columnHelper.accessor("notes", {
         header: t("asset:valueHistory.notes"),
         size: 300,
         meta: { cell: { variant: "long-text" } },
+        cell: ({ row }) => {
+          const autoLabel = translateAutoNote(row.original.autoNote, t);
+          const userNotes = row.original.notes;
+          return (
+            <span className="flex size-full items-center px-2 text-sm">
+              {autoLabel && <span className="text-muted-foreground mr-1 italic">{autoLabel}</span>}
+              {autoLabel && userNotes && <span className="text-muted-foreground mr-1">·</span>}
+              {userNotes && <span>{userNotes}</span>}
+            </span>
+          );
+        },
       }),
       // Actions column with delete button
       columnHelper.display({
@@ -289,6 +632,25 @@ export function ValueHistoryDataGrid({
   }, []);
 
   // Initialize data grid
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  // Stable ref so getCellState can read the table without a circular dep
+  const tableRef = useRef<ReturnType<typeof useDataGrid<ValueHistoryEntry>>["table"] | null>(null);
+
+  const getCellState = useCallback(
+    (rowIndex: number, _columnId: string): CellValidationState | null => {
+      const row = tableRef.current?.getRowModel().rows[rowIndex];
+      if (!row) return null;
+      if (row.original.date < today) return { type: "success", messages: [] };
+      return null;
+    },
+    [today],
+  );
+
   const dataGrid = useDataGrid<ValueHistoryEntry>({
     data: localEntries,
     columns,
@@ -302,10 +664,14 @@ export function ValueHistoryDataGrid({
     onRowAdd,
     onRowsAdd,
     onRowsDelete,
+    meta: { getCellState },
     initialState: {
       sorting: [{ id: "date", desc: true }],
     },
   });
+
+  // Keep ref in sync after each render
+  tableRef.current = dataGrid.table;
 
   const selectedRowCount = dataGrid.table.getSelectedRowModel().rows.length;
 
@@ -359,6 +725,24 @@ export function ValueHistoryDataGrid({
         onSave={handleSave}
         onCancel={handleCancel}
         isLiability={isLiability}
+        canGenerateSchedule={canGenerateSchedule}
+        onGenerateSchedule={handleGenerateSchedule}
+        onEarlyRepayment={
+          isLiability && liabilityMeta ? () => setEarlyRepaymentOpen(true) : undefined
+        }
+        onCloseLoan={isLiability ? () => setCloseLoanOpen(true) : undefined}
+      />
+
+      <EarlyRepaymentDialog
+        open={earlyRepaymentOpen}
+        onOpenChange={setEarlyRepaymentOpen}
+        onConfirm={handleEarlyRepayment}
+      />
+
+      <CloseLoanDialog
+        open={closeLoanOpen}
+        onOpenChange={setCloseLoanOpen}
+        onConfirm={handleCloseLoan}
       />
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-md border">

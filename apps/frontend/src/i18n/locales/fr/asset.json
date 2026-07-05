@@ -423,6 +423,8 @@
     "property": "Bien immobilier",
     "vehicle": "Véhicule",
     "liability": "Passif",
+    "term_years": "{{years}} ans",
+    "ends": "fin {{date}}",
     "liabilityType": {
       "mortgage": "Prêt hypothécaire",
       "auto_loan": "Prêt automobile",
@@ -456,6 +458,7 @@
     "original_amount": "Montant initial",
     "interest_rate": "Taux d'intérêt",
     "origination_date": "Date d'origine",
+    "loan_term_years": "Durée du prêt",
     "delete_asset_title": "Supprimer l'actif",
     "delete_asset_description": "Voulez-vous vraiment supprimer {{name}} ? Cela supprimera tout l'historique des évaluations et cette action est irréversible.",
     "deleting": "Suppression...",
@@ -537,6 +540,7 @@
     "track_debt_paydown": "Utilisé pour suivre le remboursement de la dette",
     "calculate_gain": "Utilisé pour calculer le gain latent",
     "origination_date": "Date d'origine",
+    "loan_term_years": "Durée du prêt (ans)",
     "purchase_date": "Date d'achat",
     "create_link_mortgage": "Créer et lier un prêt hypothécaire",
     "link_to_asset_optional": "Lier à un actif (facultatif)",
@@ -624,6 +628,7 @@
     "original_amount": "Montant initial",
     "interest_rate": "Taux d'intérêt (%)",
     "origination_date": "Date d'origine",
+    "loan_term_years": "Durée du prêt (ans)",
     "linked_asset": "Actif lié",
     "select_asset_to_link": "Sélectionner un actif à lier (facultatif)",
     "link_to_asset": "Lier à un actif",
@@ -666,15 +671,43 @@
     "date": "Date",
     "balance": "Solde",
     "value": "Valeur",
-    "notes": "Notes"
+    "interest": "Intérêts",
+    "principal": "Capital",
+    "notes": "Notes",
+    "note_repaid": "{{percent}}% remboursé",
+    "note_crossover": "Le capital dépasse les intérêts",
+    "note_early_repayment": "Remboursement anticipé de {{amount}}",
+    "note_loan_closed": "Prêt soldé"
   },
   "valueToolbar": {
     "add_balance": "Ajouter un solde",
     "add_value": "Ajouter une valeur",
+    "generate_schedule": "Générer l'échéancier",
+    "early_repayment": "Remboursement anticipé",
+    "close_loan": "Solder le prêt",
     "delete_count": "Supprimer ({{count}})",
     "modified": "{{count}} modifié(s)",
     "to_delete": "{{count}} à supprimer",
     "cancel": "Annuler",
     "save_changes": "Enregistrer les modifications"
+  },
+  "loanActions": {
+    "earlyRepayment": {
+      "title": "Remboursement anticipé",
+      "date": "Date du remboursement",
+      "amount": "Montant remboursé",
+      "mode_label": "Effet sur le prêt",
+      "reduce_duration": "Réduire la durée",
+      "reduce_duration_desc": "Même mensualité, durée raccourcie",
+      "reduce_payment": "Réduire la mensualité",
+      "reduce_payment_desc": "Même durée, mensualité allégée",
+      "confirm": "Appliquer"
+    },
+    "closeLoan": {
+      "title": "Solder le prêt",
+      "description": "Le prêt sera marqué comme intégralement remboursé à la date choisie. Les échéances futures seront supprimées.",
+      "date": "Date de clôture",
+      "confirm": "Solder"
+    }
   }
 }

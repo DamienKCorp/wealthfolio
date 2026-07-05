@@ -423,6 +423,8 @@
     "property": "房产",
     "vehicle": "车辆",
     "liability": "负债",
+    "term_years": "{{years}}年",
+    "ends": "到期 {{date}}",
     "liabilityType": {
       "mortgage": "抵押贷款",
       "auto_loan": "汽车贷款",
@@ -456,6 +458,7 @@
     "original_amount": "原始金额",
     "interest_rate": "利率",
     "origination_date": "起始日期",
+    "loan_term_years": "贷款期限",
     "delete_asset_title": "删除资产",
     "delete_asset_description": "确定要删除 {{name}} 吗？这将移除所有估值历史且无法撤销。",
     "deleting": "正在删除……",
@@ -537,6 +540,7 @@
     "track_debt_paydown": "用于跟踪债务偿还",
     "calculate_gain": "用于计算未实现收益",
     "origination_date": "起始日期",
+    "loan_term_years": "贷款期限（年）",
     "purchase_date": "购买日期",
     "create_link_mortgage": "创建并关联抵押贷款",
     "link_to_asset_optional": "关联至资产（可选）",
@@ -624,6 +628,7 @@
     "original_amount": "原始金额",
     "interest_rate": "利率（%）",
     "origination_date": "起始日期",
+    "loan_term_years": "贷款期限（年）",
     "linked_asset": "关联资产",
     "select_asset_to_link": "选择要关联的资产（可选）",
     "link_to_asset": "关联至资产",
@@ -666,15 +671,43 @@
     "date": "日期",
     "balance": "余额",
     "value": "价值",
-    "notes": "备注"
+    "interest": "利息",
+    "principal": "本金",
+    "notes": "备注",
+    "note_repaid": "已还款 {{percent}}%",
+    "note_crossover": "本金超过利息",
+    "note_early_repayment": "提前还款 {{amount}}",
+    "note_loan_closed": "贷款已结清"
   },
   "valueToolbar": {
     "add_balance": "添加余额",
     "add_value": "添加价值",
+    "generate_schedule": "生成还款计划",
+    "early_repayment": "提前还款",
+    "close_loan": "结清贷款",
     "delete_count": "删除（{{count}}）",
     "modified": "{{count}} 项已修改",
     "to_delete": "{{count}} 项待删除",
     "cancel": "取消",
     "save_changes": "保存更改"
+  },
+  "loanActions": {
+    "earlyRepayment": {
+      "title": "提前还款",
+      "date": "还款日期",
+      "amount": "还款金额",
+      "mode_label": "对贷款的影响",
+      "reduce_duration": "缩短期限",
+      "reduce_duration_desc": "月供不变，期限缩短",
+      "reduce_payment": "降低月供",
+      "reduce_payment_desc": "期限不变，月供降低",
+      "confirm": "确认还款"
+    },
+    "closeLoan": {
+      "title": "结清贷款",
+      "description": "贷款将在所选日期标记为全额还清。所有未来还款计划将被删除。",
+      "date": "结清日期",
+      "confirm": "结清贷款"
+    }
   }
 }

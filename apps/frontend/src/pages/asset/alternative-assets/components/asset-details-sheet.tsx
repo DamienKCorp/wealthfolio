@@ -753,6 +753,29 @@ function LiabilityFields({
         )}
       />
 
+      <div className="grid gap-4 sm:grid-cols-2">
+        <FormField
+          control={form.control}
+          name="loanTermYears"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t("asset:detailsSheet.loan_term_years")}</FormLabel>
+              <FormControl>
+                <QuantityInput
+                  ref={field.ref}
+                  name={field.name}
+                  value={field.value}
+                  onValueChange={(value) => field.onChange(value ?? null)}
+                  placeholder="0"
+                  maxDecimalPlaces={0}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      </div>
+
       {/* Linked Asset Display/Selector */}
       <FormField
         control={form.control}

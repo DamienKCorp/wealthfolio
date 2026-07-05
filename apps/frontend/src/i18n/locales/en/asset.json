@@ -423,6 +423,8 @@
     "property": "Property",
     "vehicle": "Vehicle",
     "liability": "Liability",
+    "term_years": "{{years}}yr",
+    "ends": "ends {{date}}",
     "liabilityType": {
       "mortgage": "Mortgage",
       "auto_loan": "Auto Loan",
@@ -456,6 +458,7 @@
     "original_amount": "Original Amount",
     "interest_rate": "Interest Rate",
     "origination_date": "Origination Date",
+    "loan_term_years": "Loan Term",
     "delete_asset_title": "Delete Asset",
     "delete_asset_description": "Are you sure you want to delete {{name}}? This will remove all valuation history and cannot be undone.",
     "deleting": "Deleting...",
@@ -537,6 +540,7 @@
     "track_debt_paydown": "Used to track debt paydown",
     "calculate_gain": "Used to calculate unrealized gain",
     "origination_date": "Origination Date",
+    "loan_term_years": "Loan Term (years)",
     "purchase_date": "Purchase Date",
     "create_link_mortgage": "Create and link a mortgage",
     "link_to_asset_optional": "Link to Asset (optional)",
@@ -624,6 +628,7 @@
     "original_amount": "Original Amount",
     "interest_rate": "Interest Rate (%)",
     "origination_date": "Origination Date",
+    "loan_term_years": "Loan Term (years)",
     "linked_asset": "Linked Asset",
     "select_asset_to_link": "Select asset to link (optional)",
     "link_to_asset": "Link to Asset",
@@ -666,15 +671,43 @@
     "date": "Date",
     "balance": "Balance",
     "value": "Value",
-    "notes": "Notes"
+    "interest": "Interest",
+    "principal": "Principal",
+    "notes": "Notes",
+    "note_repaid": "{{percent}}% repaid",
+    "note_crossover": "Principal now exceeds interest",
+    "note_early_repayment": "Early repayment of {{amount}}",
+    "note_loan_closed": "Loan closed"
   },
   "valueToolbar": {
     "add_balance": "Add Balance",
     "add_value": "Add Value",
+    "generate_schedule": "Generate Schedule",
+    "early_repayment": "Early Repayment",
+    "close_loan": "Close Loan",
     "delete_count": "Delete ({{count}})",
     "modified": "{{count}} modified",
     "to_delete": "{{count}} to delete",
     "cancel": "Cancel",
     "save_changes": "Save Changes"
+  },
+  "loanActions": {
+    "earlyRepayment": {
+      "title": "Early Repayment",
+      "date": "Repayment date",
+      "amount": "Amount repaid",
+      "mode_label": "Effect on the loan",
+      "reduce_duration": "Reduce duration",
+      "reduce_duration_desc": "Same monthly payment, shorter term",
+      "reduce_payment": "Reduce payment",
+      "reduce_payment_desc": "Same term, lower monthly payment",
+      "confirm": "Apply repayment"
+    },
+    "closeLoan": {
+      "title": "Close Loan",
+      "description": "This will mark the loan as fully repaid on the selected date. All future scheduled entries will be removed.",
+      "date": "Closure date",
+      "confirm": "Close loan"
+    }
   }
 }

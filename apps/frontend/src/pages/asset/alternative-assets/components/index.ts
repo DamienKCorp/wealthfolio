@@ -34,5 +34,9 @@ export {
   type AssetDetailsFormValues,
 } from "./asset-details-sheet-schema";
 
-export { ValueHistoryDataGrid, type ValueHistoryEntry } from "./value-history-data-grid";
+export {
+  ValueHistoryDataGrid,
+  type ValueHistoryEntry,
+  type LiabilityAmortizationMeta,
+} from "./value-history-data-grid";
 export { ValueHistoryToolbar } from "./value-history-toolbar";

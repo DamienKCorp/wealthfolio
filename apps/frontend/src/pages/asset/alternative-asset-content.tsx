@@ -23,7 +23,7 @@ import {
   formatPercent,
 } from "@wealthfolio/ui";
 import HistoryChart from "@/components/history-chart-symbol";
-import { ValueHistoryDataGrid } from "./alternative-assets";
+import { ValueHistoryDataGrid, type LiabilityAmortizationMeta } from "./alternative-assets";
 import {
   AssetDetailsSheet,
   type AssetDetailsSheetAsset,
@@ -230,7 +230,12 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
             <CardContent className="relative p-0">
               {filteredChartData.length > 0 ? (
                 <>
-                  <HistoryChart data={filteredChartData} />
+                  <HistoryChart
+                    data={filteredChartData}
+                    splitAtTimestamp={
+                      isLiability ? new Date().toISOString().slice(0, 10) + "T00:00:00Z" : undefined
+                    }
+                  />
                   <IntervalSelector
                     onIntervalSelect={handleIntervalSelect}
                     className="absolute bottom-2 left-1/2 -translate-x-1/2 transform"
@@ -314,12 +319,44 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     );
   }
 
+  // Build amortization metadata for liabilities when all required fields are present
+  const liabilityMeta = useMemo((): LiabilityAmortizationMeta | undefined => {
+    if (!isLiability || !holding.metadata) return undefined;
+    const meta = holding.metadata;
+    const originalAmount = parseFloat(
+      ((meta.original_amount ?? meta.purchase_price) as string | undefined) ?? "",
+    );
+    const annualInterestRate = parseFloat((meta.interest_rate as string | undefined) ?? "");
+    const originationDateStr = (meta.origination_date ?? meta.purchase_date) as string | undefined;
+    if (!originationDateStr) return undefined;
+    const originationDate = parseLocalDate(originationDateStr);
+
+    // Determine term: prefer explicit loan_term_years, fall back to maturity_date distance
+    let termMonths: number | undefined;
+    if (meta.loan_term_years) {
+      termMonths = parseInt(meta.loan_term_years as string, 10) * 12;
+    }
+
+    if (
+      isNaN(originalAmount) ||
+      originalAmount <= 0 ||
+      isNaN(annualInterestRate) ||
+      !termMonths ||
+      termMonths <= 0
+    ) {
+      return undefined;
+    }
+
+    return { originalAmount, annualInterestRate, originationDate, termMonths };
+  }, [isLiability, holding.metadata]);
+
   // History tab
   return (
     <ValueHistoryDataGrid
       data={quoteHistory}
       currency={holding.currency}
       isLiability={isLiability}
+      liabilityMeta={liabilityMeta}
       onSaveQuote={(quote: Quote) => saveQuoteMutation.mutate(quote)}
       onDeleteQuote={(id: string) => deleteQuoteMutation.mutate(id)}
     />
@@ -762,6 +799,16 @@ function getDetailRows(
           value: format(parseLocalDate(originationDate), "MMM d, yyyy"),
         });
       }
+
+      // Loan term (years)
+      const loanTermYears = metadata.loan_term_years as string | undefined;
+      if (loanTermYears) {
+        rows.push({
+          label: t("asset:altContent.loan_term_years"),
+          value: `${loanTermYears} ${parseInt(loanTermYears, 10) === 1 ? "year" : "years"}`,
+        });
+      }
+
       break;
     }
 

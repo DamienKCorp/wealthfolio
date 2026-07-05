@@ -1690,6 +1690,7 @@ export interface LiabilityMetadata {
   originalAmount?: string;
   originationDate?: string;
   interestRate?: string;
+  loanTermYears?: string;
 }
 
 /**

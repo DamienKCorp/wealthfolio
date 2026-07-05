@@ -69,6 +69,7 @@ export const LinkedLiabilitiesCard: React.FC<LinkedLiabilitiesCardProps> = ({
                     <p className="text-sm font-medium">{liability.name}</p>
                     <p className="text-muted-foreground text-xs">
                       {getLiabilityTypeLabel(liability.metadata, t)}
+                      {getLiabilityTermInfo(liability.metadata, t)}
                     </p>
                   </div>
                 </div>
@@ -118,6 +119,20 @@ function getLiabilityTypeLabel(
   if (!liabilityType) return t("asset:linkedLiabilities.liability");
   const key = LIABILITY_TYPE_LABEL_KEYS[liabilityType];
   return key ? t(key) : liabilityType;
+}
+
+function getLiabilityTermInfo(metadata: Record<string, unknown> | undefined, t: TFunction): string {
+  if (!metadata) return "";
+  const parts: string[] = [];
+  const termYears = metadata.loan_term_years as string | undefined;
+  const maturityDate = metadata.maturity_date as string | undefined;
+  if (termYears) {
+    parts.push(t("asset:linkedLiabilities.term_years", { years: termYears }));
+  }
+  if (maturityDate) {
+    parts.push(t("asset:linkedLiabilities.ends", { date: maturityDate }));
+  }
+  return parts.length > 0 ? ` · ${parts.join(" · ")}` : "";
 }
 
 /**
@@ -170,6 +185,7 @@ export const LinkedLiabilitiesSection: React.FC<LinkedLiabilitiesSectionProps> =
                   <p className="text-sm font-medium">{liability.name}</p>
                   <p className="text-muted-foreground text-xs">
                     {getLiabilityTypeLabel(liability.metadata, t)}
+                    {getLiabilityTermInfo(liability.metadata, t)}
                   </p>
                 </div>
               </div>

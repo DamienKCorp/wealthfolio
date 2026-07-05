@@ -11,6 +11,10 @@ interface ValueHistoryToolbarProps {
   onSave: () => void;
   onCancel: () => void;
   isLiability?: boolean;
+  canGenerateSchedule?: boolean;
+  onGenerateSchedule?: () => void;
+  onEarlyRepayment?: () => void;
+  onCloseLoan?: () => void;
 }
 
 export function ValueHistoryToolbar({
@@ -23,6 +27,10 @@ export function ValueHistoryToolbar({
   onSave,
   onCancel,
   isLiability = false,
+  canGenerateSchedule = false,
+  onGenerateSchedule,
+  onEarlyRepayment,
+  onCloseLoan,
 }: ValueHistoryToolbarProps) {
   const { t } = useTranslation();
 
@@ -33,6 +41,27 @@ export function ValueHistoryToolbar({
           <Icons.Plus className="mr-2 h-4 w-4" />
           {isLiability ? t("asset:valueToolbar.add_balance") : t("asset:valueToolbar.add_value")}
         </Button>
+
+        {canGenerateSchedule && onGenerateSchedule && (
+          <Button variant="outline" size="sm" onClick={onGenerateSchedule}>
+            <Icons.RefreshCw className="mr-2 h-4 w-4" />
+            {t("asset:valueToolbar.generate_schedule")}
+          </Button>
+        )}
+
+        {isLiability && onEarlyRepayment && (
+          <Button variant="outline" size="sm" onClick={onEarlyRepayment}>
+            <Icons.ArrowDown className="mr-2 h-4 w-4" />
+            {t("asset:valueToolbar.early_repayment")}
+          </Button>
+        )}
+
+        {isLiability && onCloseLoan && (
+          <Button variant="outline" size="sm" onClick={onCloseLoan}>
+            <Icons.CheckCircle className="mr-2 h-4 w-4" />
+            {t("asset:valueToolbar.close_loan")}
+          </Button>
+        )}
 
         {selectedRowCount > 0 && (
           <Button variant="outline" size="sm" onClick={onDeleteSelected}>

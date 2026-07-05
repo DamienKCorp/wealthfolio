@@ -116,6 +116,7 @@ interface FormData {
   quantity?: string;
   unit?: string;
   liabilityType?: string;
+  loanTermYears?: string;
   hasMortgage?: boolean;
   linkedAssetId?: string;
 }
@@ -262,6 +263,7 @@ export function AlternativeAssetQuickAddModal({
       if (formData.purchasePrice) metadata.original_amount = formData.purchasePrice;
       // Store "Origination Date" as origination_date in metadata
       if (formData.purchaseDate) metadata.origination_date = formatDateToISO(formData.purchaseDate);
+      if (formData.loanTermYears) metadata.loan_term_years = formData.loanTermYears;
     }
 
     const request: CreateAlternativeAssetRequest = {
@@ -588,6 +590,32 @@ export function AlternativeAssetQuickAddModal({
                     />
                   </div>
                 </div>
+
+                {/* Loan term for liabilities */}
+                {formData.kind === AlternativeAssetKind.LIABILITY && (
+                  <div className="space-y-2">
+                    <Label className="text-foreground text-sm font-medium">
+                      {t("asset:quickAdd.loan_term_years")}
+                      <span className="text-muted-foreground ml-1 text-xs font-normal">
+                        {t("asset:quickAdd.optional")}
+                      </span>
+                    </Label>
+                    <QuantityInput
+                      value={
+                        formData.loanTermYears ? parseFloat(formData.loanTermYears) : undefined
+                      }
+                      onValueChange={(value) =>
+                        updateFormData(
+                          "loanTermYears",
+                          value != null ? String(Math.round(value)) : undefined,
+                        )
+                      }
+                      placeholder="0"
+                      maxDecimalPlaces={0}
+                      className="h-11"
+                    />
+                  </div>
+                )}
 
                 {/* Mortgage checkbox for property */}
                 {formData.kind === AlternativeAssetKind.PROPERTY && (

@@ -8,6 +8,7 @@ import {
   Area,
   AreaChart,
   ReferenceDot,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -66,14 +67,43 @@ export default function HistoryChart({
   activityMarkers = [],
   onActivityMarkerClick,
   height = 350,
+  splitAtTimestamp,
 }: {
   data: HistoryChartData[];
   interval?: TimePeriod;
   height?: number;
   activityMarkers?: HistoryChartActivityMarker[];
   onActivityMarkerClick?: (marker: HistoryChartActivityMarker) => void;
+  /** ISO timestamp: points before this date are rendered as "past" (muted), after as "future" (success). */
+  splitAtTimestamp?: string;
 }) {
   const [hoveredMarker, setHoveredMarker] = useState(false);
+
+  // When a split is active, enrich each data point with pastValue/futureValue.
+  // The boundary point appears in BOTH series so the two Areas connect seamlessly.
+  const { splitData, splitTimestamp } = useMemo(() => {
+    if (!splitAtTimestamp) return { splitData: data, splitTimestamp: undefined };
+
+    // Find the last point that is <= splitAtTimestamp (the boundary point)
+    const boundaryTs = data.filter((d) => d.timestamp <= splitAtTimestamp).at(-1)?.timestamp;
+    // If all points are in the future, the whole chart is future
+    if (!boundaryTs) {
+      return {
+        splitData: data.map((d) => ({ ...d, pastValue: null, futureValue: d.totalValue })),
+        splitTimestamp: undefined,
+      };
+    }
+
+    return {
+      splitData: data.map((d) => ({
+        ...d,
+        pastValue: d.timestamp <= boundaryTs! ? d.totalValue : null,
+        futureValue: d.timestamp >= boundaryTs! ? d.totalValue : null,
+      })),
+      splitTimestamp: boundaryTs,
+    };
+  }, [data, splitAtTimestamp]);
+
   const markerByTimestamp = useMemo(() => {
     const markers = new Map<string, HistoryChartActivityMarker>();
     for (const marker of activityMarkers) {
@@ -96,7 +126,7 @@ export default function HistoryChart({
       <div className="grow">
         <ResponsiveContainer width="100%" height="100%" minHeight={height}>
           <AreaChart
-            data={data}
+            data={splitData}
             stackOffset="sign"
             style={{
               cursor: onActivityMarkerClick && hoveredMarker ? "pointer" : undefined,
@@ -122,6 +152,10 @@ export default function HistoryChart({
                 <stop offset="5%" stopColor="var(--success)" stopOpacity={0.2} />
                 <stop offset="95%" stopColor="var(--success)" stopOpacity={0.1} />
               </linearGradient>
+              <linearGradient id="colorPast" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="var(--muted-foreground)" stopOpacity={0.15} />
+                <stop offset="95%" stopColor="var(--muted-foreground)" stopOpacity={0.05} />
+              </linearGradient>
             </defs>
             <Tooltip
               content={(props) => <SymbolToolTip {...(props as unknown as SymbolTooltipProps)} />}
@@ -131,17 +165,54 @@ export default function HistoryChart({
               <YAxis hide={true} type="number" domain={["auto", "auto"]} />
             ) : null}
             <XAxis hide dataKey="timestamp" type="category" />
-            <Area
-              isAnimationActive={true}
-              animationDuration={300}
-              animationEasing="ease-out"
-              connectNulls={true}
-              type="monotone"
-              dataKey="totalValue"
-              stroke="var(--success)"
-              fillOpacity={1}
-              fill="url(#colorUv)"
-            />
+            {splitAtTimestamp ? (
+              <>
+                {/* Past portion — muted */}
+                <Area
+                  isAnimationActive={false}
+                  connectNulls={false}
+                  type="monotone"
+                  dataKey="pastValue"
+                  stroke="var(--muted-foreground)"
+                  strokeOpacity={0.5}
+                  fillOpacity={1}
+                  fill="url(#colorPast)"
+                  dot={false}
+                  activeDot={false}
+                />
+                {/* Future portion — success */}
+                <Area
+                  isAnimationActive={false}
+                  connectNulls={false}
+                  type="monotone"
+                  dataKey="futureValue"
+                  stroke="var(--success)"
+                  fillOpacity={1}
+                  fill="url(#colorUv)"
+                  dot={false}
+                />
+                {splitTimestamp && (
+                  <ReferenceLine
+                    x={splitTimestamp}
+                    stroke="var(--muted-foreground)"
+                    strokeDasharray="4 3"
+                    strokeOpacity={0.5}
+                  />
+                )}
+              </>
+            ) : (
+              <Area
+                isAnimationActive={true}
+                animationDuration={300}
+                animationEasing="ease-out"
+                connectNulls={true}
+                type="monotone"
+                dataKey="totalValue"
+                stroke="var(--success)"
+                fillOpacity={1}
+                fill="url(#colorUv)"
+              />
+            )}
             {activityMarkers.map((marker) => {
               return (
                 <ReferenceDot

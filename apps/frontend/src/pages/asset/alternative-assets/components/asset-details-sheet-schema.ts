@@ -127,6 +127,13 @@ export const liabilityDetailsSchema = baseSchema.extend({
     .max(100, "Interest rate must be 100 or less")
     .optional()
     .nullable(),
+  loanTermYears: z.coerce
+    .number()
+    .int("Loan term must be a whole number")
+    .positive("Loan term must be greater than 0")
+    .max(100, "Loan term must be 100 years or less")
+    .optional()
+    .nullable(),
   linkedAssetId: z.string().optional().nullable(),
 });
 
@@ -216,7 +223,7 @@ export function getDefaultDetailsFormValues(
         description: (metadata?.description as string) ?? null,
       };
 
-    case AlternativeAssetKind.LIABILITY:
+    case AlternativeAssetKind.LIABILITY: {
       // For original amount, check both new field (original_amount) and legacy field (purchase_price)
       const origAmount = metadata?.original_amount ?? metadata?.purchase_price;
       // For origination date, check both new field (origination_date) and legacy field (purchase_date)
@@ -228,8 +235,12 @@ export function getDefaultDetailsFormValues(
         originalAmount: origAmount ? parseFloat(origAmount as string) : null,
         originationDate: origDate ? parseLocalDate(origDate as string) : null,
         interestRate: metadata?.interest_rate ? parseFloat(metadata.interest_rate as string) : null,
+        loanTermYears: metadata?.loan_term_years
+          ? parseInt(metadata.loan_term_years as string, 10)
+          : null,
         linkedAssetId: (metadata?.linked_asset_id as string) ?? null,
       };
+    }
 
     case AlternativeAssetKind.OTHER:
     default:
@@ -292,6 +303,7 @@ export function formValuesToMetadata(values: AssetDetailsFormValues): Record<str
       if (values.originationDate)
         metadata.origination_date = formatDateToISO(values.originationDate);
       if (values.interestRate != null) metadata.interest_rate = values.interestRate.toString();
+      if (values.loanTermYears != null) metadata.loan_term_years = values.loanTermYears.toString();
       if (values.linkedAssetId) metadata.linked_asset_id = values.linkedAssetId;
       break;
 
