@@ -25,7 +25,7 @@ import { useSettingsContext } from "@/lib/settings-provider";
 import { METAL_TYPES, LIABILITY_TYPES, WEIGHT_UNITS } from "./alternative-asset-quick-add-schema";
 import { useAlternativeAssetMutations } from "../hooks/use-alternative-asset-mutations";
 import { computeAmortizationSchedule, serializeAmortizationNotes } from "./value-history-data-grid";
-import { updateQuote } from "@/adapters";
+import { updateQuote, deleteQuote } from "@/adapters";
 import {
   AlternativeAssetKind,
   type CreateAlternativeAssetRequest,
@@ -191,6 +191,10 @@ export function AlternativeAssetQuickAddModal({
         pendingAmortRef.current = null;
         const schedule = computeAmortizationSchedule(amort);
         const assetId = response.assetId;
+        // Delete the auto-created initial quote before saving the schedule
+        // to avoid a stray "today" entry coexisting with the amortization rows
+        await deleteQuote(response.quoteId);
+
         await Promise.all(
           schedule.map((row) => {
             const dateStr = formatDateToISO(row.date);

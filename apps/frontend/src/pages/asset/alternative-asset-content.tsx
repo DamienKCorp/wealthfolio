@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { format } from "date-fns";
+import { format, differenceInMonths, parseISO } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
 import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { Badge } from "@wealthfolio/ui/components/ui/badge";
@@ -524,16 +524,22 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
     const amountPaid = originalAmount - currentBalance;
     const percentPaid = amountPaid / originalAmount;
 
-    // Compute monthly payment if rate and term are available
+    // Compute monthly payment from current balance and remaining term
     const annualRate = parseFloat((metadata.interest_rate as string | undefined) ?? "0");
-    const termMonths = parseInt((metadata.loan_term_years as string | undefined) ?? "", 10) * 12;
+    const totalTermMonths =
+      parseInt((metadata.loan_term_years as string | undefined) ?? "", 10) * 12;
     let monthlyPayment: number | null = null;
-    if (!isNaN(termMonths) && termMonths > 0) {
+    if (!isNaN(totalTermMonths) && totalTermMonths > 0) {
+      const originationDateStr = metadata.origination_date as string | undefined;
+      const monthsElapsed = originationDateStr
+        ? differenceInMonths(new Date(), parseISO(originationDateStr))
+        : 0;
+      const remainingMonths = Math.max(1, totalTermMonths - monthsElapsed);
       const r = annualRate / 100 / 12;
       monthlyPayment =
         r === 0
-          ? originalAmount / termMonths
-          : (originalAmount * r) / (1 - Math.pow(1 + r, -termMonths));
+          ? currentBalance / remainingMonths
+          : (currentBalance * r) / (1 - Math.pow(1 + r, -remainingMonths));
       monthlyPayment = Math.round(monthlyPayment * 100) / 100;
     }
 
@@ -545,6 +551,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
     metadata.purchase_price,
     metadata.interest_rate,
     metadata.loan_term_years,
+    metadata.origination_date,
   ]);
 
   // Determine if we should show a header with value info
@@ -824,18 +831,21 @@ function getDetailRows(
         rows.push({ label: t("asset:altContent.interest_rate"), value: `${interestRate}%` });
       }
 
-      // Monthly payment (computed from original amount, rate and term)
-      const mpOriginal = parseFloat(
-        ((metadata.original_amount ?? metadata.purchase_price) as string | undefined) ?? "",
-      );
+      // Monthly payment (computed from current balance and remaining term)
+      const mpCurrent = Math.abs(parseFloat(holding.marketValue));
       const mpRate = parseFloat((metadata.interest_rate as string | undefined) ?? "0") / 100 / 12;
-      const mpTermMonths =
+      const mpTotalTermMonths =
         parseInt((metadata.loan_term_years as string | undefined) ?? "", 10) * 12;
-      if (!isNaN(mpOriginal) && mpOriginal > 0 && !isNaN(mpTermMonths) && mpTermMonths > 0) {
+      if (mpCurrent > 0 && !isNaN(mpTotalTermMonths) && mpTotalTermMonths > 0) {
+        const mpOriginationStr = metadata.origination_date as string | undefined;
+        const mpElapsed = mpOriginationStr
+          ? differenceInMonths(new Date(), parseISO(mpOriginationStr))
+          : 0;
+        const mpRemaining = Math.max(1, mpTotalTermMonths - mpElapsed);
         const monthlyPayment =
           mpRate === 0
-            ? mpOriginal / mpTermMonths
-            : (mpOriginal * mpRate) / (1 - Math.pow(1 + mpRate, -mpTermMonths));
+            ? mpCurrent / mpRemaining
+            : (mpCurrent * mpRate) / (1 - Math.pow(1 + mpRate, -mpRemaining));
         rows.push({
           label: t("asset:altContent.monthly_payment"),
           value: (

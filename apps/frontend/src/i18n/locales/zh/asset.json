@@ -680,6 +680,8 @@
     "note_repaid": "已还款 {{percent}}%",
     "note_crossover": "本金超过利息",
     "note_early_repayment": "提前还款 {{amount}}",
+    "note_saved_months": "还款期缩短 {{months}} 个月",
+    "note_new_payment": "新月供：{{amount}}",
     "note_loan_closed": "贷款已结清"
   },
   "valueToolbar": {

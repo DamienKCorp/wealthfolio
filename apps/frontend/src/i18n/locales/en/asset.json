@@ -680,6 +680,8 @@
     "note_repaid": "{{percent}}% repaid",
     "note_crossover": "Principal now exceeds interest",
     "note_early_repayment": "Early repayment of {{amount}}",
+    "note_saved_months": "Term reduced by {{months}} months",
+    "note_new_payment": "New monthly payment: {{amount}}",
     "note_loan_closed": "Loan closed"
   },
   "valueToolbar": {

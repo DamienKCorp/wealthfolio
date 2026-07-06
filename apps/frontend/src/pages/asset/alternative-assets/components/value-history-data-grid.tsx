@@ -80,6 +80,12 @@ function translateAutoNote(
       if (tok.startsWith("early_repayment:")) {
         return t("asset:valueHistory.note_early_repayment", { amount: tok.slice(16) });
       }
+      if (tok.startsWith("saved_months:")) {
+        return t("asset:valueHistory.note_saved_months", { months: tok.slice(13) });
+      }
+      if (tok.startsWith("new_payment:")) {
+        return t("asset:valueHistory.note_new_payment", { amount: tok.slice(12) });
+      }
       if (tok === "loan_closed") return t("asset:valueHistory.note_loan_closed");
       return tok;
     })
@@ -173,21 +179,31 @@ interface ValueHistoryDataGridProps {
 // Generate a temporary ID for new entries
 const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-// Parse amortization data stored in quote notes as "__amort:interest=X;principal=Y;auto=TOKENS__"
+// Parse amortization data stored in quote notes.
+// Full format:  "__amort:interest=X;principal=Y;auto=TOKENS__"
+// Auto-only:    "__amort:auto=TOKENS__"
 const parseAmortizationNotes = (
   notes: string | null | undefined,
 ): { interest: number | null; principal: number | null; autoNote: string; userNotes: string } => {
   if (!notes) return { interest: null, principal: null, autoNote: "", userNotes: "" };
-  const match = /^__amort:interest=([\d.]+);principal=([\d.]+)(?:;auto=([^_]*))?__\n?(.*)/s.exec(
+  // Full format (interest + principal + optional auto)
+  const full = /^__amort:interest=([\d.]+);principal=([\d.]+)(?:;auto=(.*?))?__\n?(.*)/s.exec(
     notes,
   );
-  if (!match) return { interest: null, principal: null, autoNote: "", userNotes: notes };
-  return {
-    interest: parseFloat(match[1]),
-    principal: parseFloat(match[2]),
-    autoNote: match[3] ?? "",
-    userNotes: match[4] ?? "",
-  };
+  if (full) {
+    return {
+      interest: parseFloat(full[1]),
+      principal: parseFloat(full[2]),
+      autoNote: full[3] ?? "",
+      userNotes: full[4] ?? "",
+    };
+  }
+  // Auto-only format (no interest/principal breakdown)
+  const autoOnly = /^__amort:auto=(.*?)__\n?(.*)/s.exec(notes);
+  if (autoOnly) {
+    return { interest: null, principal: null, autoNote: autoOnly[1], userNotes: autoOnly[2] ?? "" };
+  }
+  return { interest: null, principal: null, autoNote: "", userNotes: notes };
 };
 
 // Serialize amortization data back into the notes field
@@ -197,7 +213,12 @@ export const serializeAmortizationNotes = (
   autoNote: string,
   userNotes: string,
 ): string | undefined => {
-  if (interest === null || principal === null) return userNotes || undefined;
+  if (interest === null || principal === null) {
+    // No amort breakdown, but still encode autoNote if present
+    if (!autoNote) return userNotes || undefined;
+    const prefix = `__amort:auto=${autoNote}__`;
+    return userNotes ? `${prefix}\n${userNotes}` : prefix;
+  }
   const autoSegment = autoNote ? `;auto=${autoNote}` : "";
   const prefix = `__amort:interest=${interest};principal=${principal}${autoSegment}__`;
   return userNotes ? `${prefix}\n${userNotes}` : prefix;
@@ -316,81 +337,109 @@ export function ValueHistoryDataGrid({
     (result: EarlyRepaymentResult) => {
       if (!liabilityMeta) return;
 
-      // Find the current balance at the repayment date (last entry on or before date)
+      const monthlyRate = liabilityMeta.annualInterestRate / 100 / 12;
+
+      // --- 1. Find balance at the repayment date ---
+      // Use the last scheduled entry on or before the repayment date.
       const sorted = [...localEntries].sort((a, b) => a.date.getTime() - b.date.getTime());
-      const prev = sorted.filter((e) => e.date <= result.date).at(-1);
-      const currentBalance = prev?.value ?? liabilityMeta.originalAmount;
-      const newBalance = Math.max(0, currentBalance - result.amount);
+      const prevEntry = sorted.filter((e) => e.date <= result.date).at(-1);
+      const balanceBeforeRepayment = prevEntry?.value ?? liabilityMeta.originalAmount;
+      const newBalance = Math.max(0, balanceBeforeRepayment - result.amount);
 
-      // Insert the early repayment row
-      const repaymentEntry: ValueHistoryEntry = {
-        id: generateTempId(),
-        date: result.date,
-        value: newBalance,
-        interest: null,
-        principal: null,
-        autoNote: `early_repayment:${result.amount}`,
-        notes: "",
-        currency,
-        isNew: true,
-      };
-
-      // Months elapsed from origination to repayment date
+      // --- 2. Find the next scheduled anniversary AFTER the repayment date ---
+      // The schedule resumes from that date so day-of-month never shifts.
+      // monthsElapsed counts whole months from origination to repayment date.
       const monthsElapsed = differenceInMonths(result.date, liabilityMeta.originationDate);
-      // Remaining months depends on mode
-      const originalRemaining = liabilityMeta.termMonths - monthsElapsed;
-      let remainingMonths: number;
-      if (result.mode === "reduce_payment") {
-        // Same remaining duration, smaller payment
-        remainingMonths = Math.max(1, originalRemaining);
-      } else {
-        // Recalculate how many months to pay off newBalance with same monthly payment
-        const monthlyRate = liabilityMeta.annualInterestRate / 100 / 12;
-        if (monthlyRate === 0 || newBalance <= 0) {
-          remainingMonths = Math.max(1, originalRemaining);
-        } else {
-          const monthlyPayment =
-            (liabilityMeta.originalAmount * monthlyRate) /
+      // Next anniversary = origination + (elapsed + 1) months
+      const nextAnniversary = addMonths(liabilityMeta.originationDate, monthsElapsed + 1);
+      // Months remaining in the original schedule from that next anniversary
+      const originalRemainingFromNext = liabilityMeta.termMonths - (monthsElapsed + 1);
+
+      // --- 3. Compute new schedule parameters ---
+      // The current scheduled monthly payment (based on original amount/term, unchanged)
+      const scheduledMonthlyPayment =
+        monthlyRate === 0
+          ? liabilityMeta.originalAmount / liabilityMeta.termMonths
+          : (liabilityMeta.originalAmount * monthlyRate) /
             (1 - Math.pow(1 + monthlyRate, -liabilityMeta.termMonths));
-          remainingMonths = Math.max(
+
+      let newTermMonths: number;
+      let newMonthlyPayment: number;
+
+      if (result.mode === "reduce_payment") {
+        // Same remaining duration, recalculate payment from new balance
+        newTermMonths = Math.max(1, originalRemainingFromNext);
+        newMonthlyPayment =
+          monthlyRate === 0
+            ? newBalance / newTermMonths
+            : (newBalance * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -newTermMonths));
+      } else {
+        // reduce_duration: keep same payment, shorten the term
+        if (monthlyRate === 0 || newBalance <= 0) {
+          newTermMonths = Math.max(1, Math.ceil(newBalance / scheduledMonthlyPayment));
+        } else {
+          newTermMonths = Math.max(
             1,
             Math.ceil(
-              -Math.log(1 - (newBalance * monthlyRate) / monthlyPayment) /
+              -Math.log(1 - (newBalance * monthlyRate) / scheduledMonthlyPayment) /
                 Math.log(1 + monthlyRate),
             ),
           );
         }
+        newMonthlyPayment = scheduledMonthlyPayment;
       }
 
-      // Regenerate the future schedule from the new balance
+      // --- 4. Impact token for the note ---
+      const savedMonths = Math.max(0, originalRemainingFromNext - newTermMonths);
+      const impactToken =
+        result.mode === "reduce_payment"
+          ? `new_payment:${Math.round(newMonthlyPayment)}`
+          : `saved_months:${savedMonths}`;
+
+      // --- 5. Regenerate the future schedule starting from nextAnniversary ---
+      // computeAmortizationSchedule uses addMonths(originationDate, m-1),
+      // so m=1 → nextAnniversary, m=2 → nextAnniversary+1month, etc.
       const newMeta: LiabilityAmortizationMeta = {
         ...liabilityMeta,
         originalAmount: newBalance,
-        originationDate: result.date,
-        termMonths: remainingMonths,
+        originationDate: nextAnniversary,
+        termMonths: newTermMonths,
+        annualInterestRate: liabilityMeta.annualInterestRate,
       };
       const futureSchedule = computeAmortizationSchedule(newMeta);
-      const futureEntries: ValueHistoryEntry[] = futureSchedule.map((row) => ({
+
+      // Tag the first future entry with the repayment annotation so it appears
+      // on a proper monthly date and the chart stays a smooth curve.
+      const futureEntries: ValueHistoryEntry[] = futureSchedule.map((row, i) => ({
         id: generateTempId(),
         date: row.date,
         value: row.balance,
         interest: row.interest,
         principal: row.principal,
-        autoNote: row.autoNote,
+        autoNote:
+          i === 0
+            ? [
+                `early_repayment:${result.amount}`,
+                impactToken,
+                ...(row.autoNote ? [row.autoNote] : []),
+              ].join("|")
+            : row.autoNote,
         notes: "",
         currency,
         isNew: true,
       }));
 
-      // Keep past entries (before repayment date), drop future ones already generated
-      const pastEntries = localEntries.filter((e) => e.date < result.date);
-      const newEntries = [...pastEntries, repaymentEntry, ...futureEntries];
+      // --- 6. Assemble: keep all entries strictly before nextAnniversary, then future schedule ---
+      // Drop the old entries from nextAnniversary onward (they get replaced).
+      const pastEntries = localEntries.filter((e) => e.date < nextAnniversary);
+      const newEntries = [...pastEntries, ...futureEntries];
 
       setLocalEntries(newEntries);
       setDirtyIds(new Set(newEntries.filter((e) => e.isNew).map((e) => e.id)));
-      // Mark removed future entries (non-new, date >= repayment) for deletion
+
+      // Mark old future entries (non-new, on or after nextAnniversary) for deletion
       const removedIds = localEntries
-        .filter((e) => !e.isNew && e.date >= result.date)
+        .filter((e) => !e.isNew && e.date >= nextAnniversary)
         .map((e) => e.id);
       setDeletedIds(new Set(removedIds));
     },
@@ -400,9 +449,14 @@ export function ValueHistoryDataGrid({
   // Handle loan closure: insert balance=0 row and drop all future entries
   const handleCloseLoan = useCallback(
     (result: CloseLoanResult) => {
+      // Cap the closure date to today so the quote is always the most recent one
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const closureDate = result.date > today ? today : result.date;
+
       const closureEntry: ValueHistoryEntry = {
         id: generateTempId(),
-        date: result.date,
+        date: closureDate,
         value: 0,
         interest: null,
         principal: null,
@@ -412,13 +466,13 @@ export function ValueHistoryDataGrid({
         isNew: true,
       };
 
-      const pastEntries = localEntries.filter((e) => e.date < result.date);
+      const pastEntries = localEntries.filter((e) => e.date < closureDate);
       const newEntries = [...pastEntries, closureEntry];
 
       setLocalEntries(newEntries);
       setDirtyIds(new Set(newEntries.filter((e) => e.isNew).map((e) => e.id)));
       const removedIds = localEntries
-        .filter((e) => !e.isNew && e.date >= result.date)
+        .filter((e) => !e.isNew && e.date >= closureDate)
         .map((e) => e.id);
       setDeletedIds(new Set(removedIds));
     },
@@ -685,18 +739,32 @@ export function ValueHistoryDataGrid({
 
   // Save all changes
   const handleSave = useCallback(() => {
-    // Save dirty entries
+    // Collect the IDs that the new entries will claim after save
+    const incomingIds = new Set(
+      localEntries
+        .filter((e) => dirtyIds.has(e.id))
+        .map((e) => {
+          if (e.id.startsWith("temp-")) {
+            const datePart = format(e.date, "yyyy-MM-dd").replace(/-/g, "");
+            return `${datePart}_${symbol.toUpperCase()}`;
+          }
+          return e.id;
+        }),
+    );
+
+    // Delete first — skip any old entry whose ID will be re-created by a new entry
+    // to avoid a delete-after-upsert race that wipes the freshly saved quote.
+    for (const id of deletedIds) {
+      if (!id.startsWith("temp-") && !incomingIds.has(id)) {
+        onDeleteQuote(id);
+      }
+    }
+
+    // Then upsert
     for (const entry of localEntries) {
       if (dirtyIds.has(entry.id)) {
         const quote = toQuote(entry, symbol);
         onSaveQuote(quote);
-      }
-    }
-
-    // Delete marked entries
-    for (const id of deletedIds) {
-      if (!id.startsWith("temp-")) {
-        onDeleteQuote(id);
       }
     }
 

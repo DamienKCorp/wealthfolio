@@ -680,6 +680,8 @@
     "note_repaid": "{{percent}}% getilgt",
     "note_crossover": "Tilgung übersteigt Zinsen",
     "note_early_repayment": "Sondertilgung von {{amount}}",
+    "note_saved_months": "Laufzeit um {{months}} Monate verkürzt",
+    "note_new_payment": "Neue Monatsrate: {{amount}}",
     "note_loan_closed": "Darlehen abgeschlossen"
   },
   "valueToolbar": {

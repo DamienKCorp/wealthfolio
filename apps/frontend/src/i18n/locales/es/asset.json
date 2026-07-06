@@ -680,6 +680,8 @@
     "note_repaid": "{{percent}}% amortizado",
     "note_crossover": "El capital supera los intereses",
     "note_early_repayment": "Amortización anticipada de {{amount}}",
+    "note_saved_months": "Plazo reducido {{months}} meses",
+    "note_new_payment": "Nueva cuota mensual: {{amount}}",
     "note_loan_closed": "Préstamo cancelado"
   },
   "valueToolbar": {

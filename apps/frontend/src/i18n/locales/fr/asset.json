@@ -680,6 +680,8 @@
     "note_repaid": "{{percent}}% remboursé",
     "note_crossover": "Le capital dépasse les intérêts",
     "note_early_repayment": "Remboursement anticipé de {{amount}}",
+    "note_saved_months": "Durée réduite de {{months}} mois",
+    "note_new_payment": "Nouvelle mensualité : {{amount}}",
     "note_loan_closed": "Prêt soldé"
   },
   "valueToolbar": {
