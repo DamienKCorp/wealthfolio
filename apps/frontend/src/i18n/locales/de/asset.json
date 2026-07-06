@@ -677,6 +677,7 @@
     "interest": "Zinsen",
     "principal": "Tilgung",
     "notes": "Notizen",
+    "auto_note": "Anmerkungen",
     "note_repaid": "{{percent}}% getilgt",
     "note_crossover": "Tilgung übersteigt Zinsen",
     "note_early_repayment": "Sondertilgung von {{amount}}",

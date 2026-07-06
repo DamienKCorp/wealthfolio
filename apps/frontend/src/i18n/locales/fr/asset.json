@@ -677,6 +677,7 @@
     "interest": "Intérêts",
     "principal": "Capital",
     "notes": "Notes",
+    "auto_note": "Annotations",
     "note_repaid": "{{percent}}% remboursé",
     "note_crossover": "Le capital dépasse les intérêts",
     "note_early_repayment": "Remboursement anticipé de {{amount}}",

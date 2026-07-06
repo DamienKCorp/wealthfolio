@@ -37,6 +37,7 @@ export {
 export {
   ValueHistoryDataGrid,
   computeAmortizationSchedule,
+  parseAmortizationNotes,
   serializeAmortizationNotes,
   type ValueHistoryEntry,
   type LiabilityAmortizationMeta,

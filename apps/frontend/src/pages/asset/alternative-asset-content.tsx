@@ -23,7 +23,11 @@ import {
   formatPercent,
 } from "@wealthfolio/ui";
 import HistoryChart from "@/components/history-chart-symbol";
-import { ValueHistoryDataGrid, type LiabilityAmortizationMeta } from "./alternative-assets";
+import {
+  ValueHistoryDataGrid,
+  parseAmortizationNotes,
+  type LiabilityAmortizationMeta,
+} from "./alternative-assets";
 import {
   AssetDetailsSheet,
   type AssetDetailsSheetAsset,
@@ -262,6 +266,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
             hasLinkedLiabilities={linkedLiabilities.length > 0}
             linkedLiabilities={isLinkableAsset ? linkedLiabilities : []}
             isLiability={isLiability}
+            quoteHistory={quoteHistory}
             className="col-span-1"
           />
         </div>
@@ -428,6 +433,7 @@ interface AlternativeAssetDetailCardProps {
   linkedLiabilities: AlternativeAssetHolding[];
   className?: string;
   isLiability?: boolean;
+  quoteHistory?: Quote[];
 }
 
 /**
@@ -490,6 +496,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
   linkedLiabilities,
   isLiability,
   className,
+  quoteHistory,
 }) => {
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
@@ -524,23 +531,43 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
     const amountPaid = originalAmount - currentBalance;
     const percentPaid = amountPaid / originalAmount;
 
-    // Compute monthly payment from current balance and remaining term
-    const annualRate = parseFloat((metadata.interest_rate as string | undefined) ?? "0");
-    const totalTermMonths =
-      parseInt((metadata.loan_term_years as string | undefined) ?? "", 10) * 12;
+    // Derive monthly payment from the first future amortization quote when available.
+    // This stays accurate after early repayments because the saved schedule reflects
+    // the new term/payment, whereas metadata.loan_term_years is never updated.
     let monthlyPayment: number | null = null;
-    if (!isNaN(totalTermMonths) && totalTermMonths > 0) {
-      const originationDateStr = metadata.origination_date as string | undefined;
-      const monthsElapsed = originationDateStr
-        ? differenceInMonths(new Date(), parseISO(originationDateStr))
-        : 0;
-      const remainingMonths = Math.max(1, totalTermMonths - monthsElapsed);
-      const r = annualRate / 100 / 12;
-      monthlyPayment =
-        r === 0
-          ? currentBalance / remainingMonths
-          : (currentBalance * r) / (1 - Math.pow(1 + r, -remainingMonths));
-      monthlyPayment = Math.round(monthlyPayment * 100) / 100;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (quoteHistory && quoteHistory.length > 0) {
+      const futureQuotes = quoteHistory
+        .filter((q) => new Date(q.timestamp) > today)
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      for (const q of futureQuotes) {
+        const { interest, principal } = parseAmortizationNotes(q.notes);
+        if (interest !== null && principal !== null) {
+          monthlyPayment = Math.round((interest + principal) * 100) / 100;
+          break;
+        }
+      }
+    }
+
+    // Fallback: compute from current balance and remaining term using metadata
+    if (monthlyPayment === null) {
+      const annualRate = parseFloat((metadata.interest_rate as string | undefined) ?? "0");
+      const totalTermMonths =
+        parseInt((metadata.loan_term_years as string | undefined) ?? "", 10) * 12;
+      if (!isNaN(totalTermMonths) && totalTermMonths > 0) {
+        const originationDateStr = metadata.origination_date as string | undefined;
+        const monthsElapsed = originationDateStr
+          ? differenceInMonths(new Date(), parseISO(originationDateStr))
+          : 0;
+        const remainingMonths = Math.max(1, totalTermMonths - monthsElapsed);
+        const r = annualRate / 100 / 12;
+        monthlyPayment =
+          r === 0
+            ? currentBalance / remainingMonths
+            : (currentBalance * r) / (1 - Math.pow(1 + r, -remainingMonths));
+        monthlyPayment = Math.round(monthlyPayment * 100) / 100;
+      }
     }
 
     return { amountPaid, percentPaid, originalAmount, currentBalance, monthlyPayment };
@@ -552,6 +579,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
     metadata.interest_rate,
     metadata.loan_term_years,
     metadata.origination_date,
+    quoteHistory,
   ]);
 
   // Determine if we should show a header with value info
@@ -831,34 +859,8 @@ function getDetailRows(
         rows.push({ label: t("asset:altContent.interest_rate"), value: `${interestRate}%` });
       }
 
-      // Monthly payment (computed from current balance and remaining term)
-      const mpCurrent = Math.abs(parseFloat(holding.marketValue));
-      const mpRate = parseFloat((metadata.interest_rate as string | undefined) ?? "0") / 100 / 12;
-      const mpTotalTermMonths =
-        parseInt((metadata.loan_term_years as string | undefined) ?? "", 10) * 12;
-      if (mpCurrent > 0 && !isNaN(mpTotalTermMonths) && mpTotalTermMonths > 0) {
-        const mpOriginationStr = metadata.origination_date as string | undefined;
-        const mpElapsed = mpOriginationStr
-          ? differenceInMonths(new Date(), parseISO(mpOriginationStr))
-          : 0;
-        const mpRemaining = Math.max(1, mpTotalTermMonths - mpElapsed);
-        const monthlyPayment =
-          mpRate === 0
-            ? mpCurrent / mpRemaining
-            : (mpCurrent * mpRate) / (1 - Math.pow(1 + mpRate, -mpRemaining));
-        rows.push({
-          label: t("asset:altContent.monthly_payment"),
-          value: (
-            <AmountDisplay
-              value={Math.round(monthlyPayment * 100) / 100}
-              currency={holding.currency}
-              isHidden={isBalanceHidden}
-            />
-          ),
-        });
-      }
-
-      // Note: Linked asset is shown in its own section with LinkedAssetSection
+      // Note: Monthly payment is shown in the card header (liabilityProgress).
+      // Linked asset is shown in its own section with LinkedAssetSection.
 
       // Origination date (check both new and legacy field names)
       const originationDate = (metadata.origination_date ?? metadata.purchase_date) as

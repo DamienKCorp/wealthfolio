@@ -677,6 +677,7 @@
     "interest": "利息",
     "principal": "本金",
     "notes": "备注",
+    "auto_note": "注释",
     "note_repaid": "已还款 {{percent}}%",
     "note_crossover": "本金超过利息",
     "note_early_repayment": "提前还款 {{amount}}",

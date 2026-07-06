@@ -677,6 +677,7 @@
     "interest": "Interest",
     "principal": "Principal",
     "notes": "Notes",
+    "auto_note": "Annotations",
     "note_repaid": "{{percent}}% repaid",
     "note_crossover": "Principal now exceeds interest",
     "note_early_repayment": "Early repayment of {{amount}}",

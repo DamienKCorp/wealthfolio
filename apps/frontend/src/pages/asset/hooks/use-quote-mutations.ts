@@ -12,6 +12,7 @@ export const useQuoteMutations = (assetId: string) => {
     queryClient.invalidateQueries({ queryKey: [QueryKeys.ASSET_DATA, assetId] });
     queryClient.invalidateQueries({ queryKey: [QueryKeys.QUOTE_HISTORY, assetId] });
     queryClient.invalidateQueries({ queryKey: [QueryKeys.LATEST_QUOTES] });
+    queryClient.invalidateQueries({ queryKey: [QueryKeys.ALTERNATIVE_HOLDINGS] });
     invalidatePerformanceCaches(queryClient);
     toast({
       title: message,

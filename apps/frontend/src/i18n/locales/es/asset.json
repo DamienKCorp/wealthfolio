@@ -677,6 +677,7 @@
     "interest": "Intereses",
     "principal": "Capital",
     "notes": "Notas",
+    "auto_note": "Anotaciones",
     "note_repaid": "{{percent}}% amortizado",
     "note_crossover": "El capital supera los intereses",
     "note_early_repayment": "Amortización anticipada de {{amount}}",

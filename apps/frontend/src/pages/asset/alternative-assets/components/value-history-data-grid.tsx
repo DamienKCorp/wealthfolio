@@ -1,6 +1,6 @@
 import { Button, DataGrid, Icons, useDataGrid } from "@wealthfolio/ui";
 import type { CellValidationState } from "@wealthfolio/ui";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { Quote } from "@/lib/types";
@@ -47,6 +47,13 @@ export interface LiabilityAmortizationMeta {
   originationDate: Date;
   /** Total number of months in the loan */
   termMonths: number;
+  /**
+   * The loan's original principal (used to compute repaid% milestones).
+   * Defaults to originalAmount when not set (standard full-schedule case).
+   * Must be set when generating a post-repayment segment so milestones
+   * reflect total repayment progress, not just progress within the segment.
+   */
+  totalLoanAmount?: number;
 }
 
 /**
@@ -97,20 +104,31 @@ function translateAutoNote(
  * Returns one row per monthly anniversary, starting from month 1.
  * autoNote stores machine tokens, not translated text.
  */
-export function computeAmortizationSchedule(meta: LiabilityAmortizationMeta): AmortizationRow[] {
+export function computeAmortizationSchedule(
+  meta: LiabilityAmortizationMeta,
+  /** Next milestone % to check (pass the value returned by the previous segment). */
+  initialNextMilestone = 10,
+): AmortizationRow[] {
   const { originalAmount, annualInterestRate, originationDate, termMonths } = meta;
+  // totalLoanAmount drives the repaid-% milestones so they always measure progress
+  // relative to the loan's original principal, not just the current segment balance.
+  const totalLoanAmount = meta.totalLoanAmount ?? originalAmount;
   const monthlyRate = annualInterestRate / 100 / 12;
   const rows: AmortizationRow[] = [];
 
-  // Monthly payment (annuité constante). Special-case 0% interest.
   const monthlyPayment =
     monthlyRate === 0
       ? originalAmount / termMonths
       : (originalAmount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -termMonths));
 
   let balance = originalAmount;
-  let principalCrossoverDone = false;
-  let nextMilestonePercent = 10;
+  let nextMilestonePercent = initialNextMilestone;
+
+  // Pre-check: if principal already exceeds interest on month 1, the crossover
+  // already happened before this schedule segment — don't emit it again.
+  const firstInterest = roundToDecimals(balance * monthlyRate);
+  const firstPrincipal = roundToDecimals(Math.min(monthlyPayment - firstInterest, balance));
+  let principalCrossoverDone = firstPrincipal > firstInterest;
 
   for (let m = 1; m <= termMonths; m++) {
     const interest = roundToDecimals(balance * monthlyRate);
@@ -120,7 +138,8 @@ export function computeAmortizationSchedule(meta: LiabilityAmortizationMeta): Am
 
     const tokens: string[] = [];
 
-    const repaidPercent = ((originalAmount - balance) / originalAmount) * 100;
+    // Measure repaid-% against the total original loan amount, not the segment balance.
+    const repaidPercent = ((totalLoanAmount - balance) / totalLoanAmount) * 100;
     while (nextMilestonePercent <= 100 && repaidPercent >= nextMilestonePercent) {
       tokens.push(`repaid:${nextMilestonePercent}`);
       nextMilestonePercent += 10;
@@ -182,7 +201,7 @@ const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).sl
 // Parse amortization data stored in quote notes.
 // Full format:  "__amort:interest=X;principal=Y;auto=TOKENS__"
 // Auto-only:    "__amort:auto=TOKENS__"
-const parseAmortizationNotes = (
+export const parseAmortizationNotes = (
   notes: string | null | undefined,
 ): { interest: number | null; principal: number | null; autoNote: string; userNotes: string } => {
   if (!notes) return { interest: null, principal: null, autoNote: "", userNotes: "" };
@@ -292,11 +311,15 @@ export function ValueHistoryDataGrid({
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
 
-  // Sync with external data changes
-  useMemo(() => {
+  // Ref mirrors dirty/deleted state so the sync effect can read it without
+  // adding those sets as deps (which would re-run the effect on every edit).
+  const hasPendingChangesRef = useRef(false);
+  hasPendingChangesRef.current = dirtyIds.size > 0 || deletedIds.size > 0;
+
+  // Sync with external data changes — only when there are no local edits in flight.
+  useEffect(() => {
+    if (hasPendingChangesRef.current) return;
     setLocalEntries(initialEntries);
-    setDirtyIds(new Set());
-    setDeletedIds(new Set());
   }, [initialEntries]);
 
   // Track if there are unsaved changes
@@ -308,7 +331,8 @@ export function ValueHistoryDataGrid({
   // Whether amortization schedule can be generated
   const canGenerateSchedule = isLiability && liabilityMeta !== undefined;
 
-  // Generate full amortization schedule and replace current entries
+  // Generate full amortization schedule — resets the loan from scratch using
+  // original metadata, discarding any early repayments.
   const handleGenerateSchedule = useCallback(() => {
     if (!liabilityMeta) return;
     const schedule = computeAmortizationSchedule(liabilityMeta);
@@ -323,10 +347,12 @@ export function ValueHistoryDataGrid({
       currency,
       isNew: true,
     }));
+    // Mark every persisted quote for deletion so the backend is fully reset.
+    const toDelete = new Set(localEntries.filter((e) => !e.isNew).map((e) => e.id));
     setLocalEntries(generated);
     setDirtyIds(new Set(generated.map((e) => e.id)));
-    setDeletedIds(new Set());
-  }, [liabilityMeta, currency, data]);
+    setDeletedIds(toDelete);
+  }, [liabilityMeta, currency, localEntries]);
 
   // Dialog open states
   const [earlyRepaymentOpen, setEarlyRepaymentOpen] = useState(false);
@@ -397,49 +423,70 @@ export function ValueHistoryDataGrid({
           : `saved_months:${savedMonths}`;
 
       // --- 5. Regenerate the future schedule starting from nextAnniversary ---
-      // computeAmortizationSchedule uses addMonths(originationDate, m-1),
-      // so m=1 → nextAnniversary, m=2 → nextAnniversary+1month, etc.
+      const totalLoanAmount = liabilityMeta.totalLoanAmount ?? liabilityMeta.originalAmount;
+      // Pick up milestone tracking where the pre-repayment schedule left off.
+      const repaidSoFar = ((totalLoanAmount - newBalance) / totalLoanAmount) * 100;
+      const initialNextMilestone = Math.ceil(repaidSoFar / 10) * 10;
+
       const newMeta: LiabilityAmortizationMeta = {
         ...liabilityMeta,
         originalAmount: newBalance,
         originationDate: nextAnniversary,
         termMonths: newTermMonths,
         annualInterestRate: liabilityMeta.annualInterestRate,
+        totalLoanAmount,
       };
-      const futureSchedule = computeAmortizationSchedule(newMeta);
+      const futureSchedule = computeAmortizationSchedule(newMeta, initialNextMilestone);
 
       // Tag the first future entry with the repayment annotation so it appears
       // on a proper monthly date and the chart stays a smooth curve.
-      const futureEntries: ValueHistoryEntry[] = futureSchedule.map((row, i) => ({
+      const futureEntries: ValueHistoryEntry[] = futureSchedule.map((row) => ({
         id: generateTempId(),
         date: row.date,
         value: row.balance,
         interest: row.interest,
         principal: row.principal,
-        autoNote:
-          i === 0
-            ? [
-                `early_repayment:${result.amount}`,
-                impactToken,
-                ...(row.autoNote ? [row.autoNote] : []),
-              ].join("|")
-            : row.autoNote,
+        autoNote: row.autoNote,
         notes: "",
         currency,
         isNew: true,
       }));
 
-      // --- 6. Assemble: keep all entries strictly before nextAnniversary, then future schedule ---
-      // Drop the old entries from nextAnniversary onward (they get replaced).
-      const pastEntries = localEntries.filter((e) => e.date < nextAnniversary);
-      const newEntries = [...pastEntries, ...futureEntries];
+      // --- 6. Balance snapshot at the repayment date ---
+      // This quote becomes the "latest as-of-today" value the backend reads for
+      // the header and detail panel. It carries no interest/principal breakdown
+      // so it is treated as a plain balance update, not a scheduled instalment.
+      // If an existing entry already sits on that exact date (e.g. the monthly
+      // instalment fell on the same day), replace it rather than duplicating
+      // (two quotes with the same date produce the same SQLite ID, causing a collision).
+      const repaymentDateMs = result.date.getTime();
+      const repaymentEntry: ValueHistoryEntry = {
+        id: generateTempId(),
+        date: result.date,
+        value: newBalance,
+        interest: null,
+        principal: null,
+        autoNote: [`early_repayment:${result.amount}`, impactToken].join("|"),
+        notes: "",
+        currency,
+        isNew: true,
+      };
+
+      // --- 7. Assemble ---
+      // Keep every existing entry strictly before the repayment date (those are
+      // unaffected history). Any entry on or after the repayment date is replaced
+      // by: repaymentEntry (balance snapshot) + regenerated schedule.
+      const beforeRepayment = localEntries.filter(
+        (e) => e.date.getTime() < repaymentDateMs,
+      );
+      const newEntries = [...beforeRepayment, repaymentEntry, ...futureEntries];
 
       setLocalEntries(newEntries);
       setDirtyIds(new Set(newEntries.filter((e) => e.isNew).map((e) => e.id)));
 
-      // Mark old future entries (non-new, on or after nextAnniversary) for deletion
+      // Delete all existing (non-new) entries from the repayment date onward.
       const removedIds = localEntries
-        .filter((e) => !e.isNew && e.date >= nextAnniversary)
+        .filter((e) => !e.isNew && e.date.getTime() >= repaymentDateMs)
         .map((e) => e.id);
       setDeletedIds(new Set(removedIds));
     },
@@ -549,21 +596,29 @@ export function ValueHistoryDataGrid({
             }),
           ]
         : []),
-      columnHelper.accessor("notes", {
-        header: t("asset:valueHistory.notes"),
-        size: 300,
-        meta: { cell: { variant: "long-text" } },
+      // Read-only column showing auto-generated annotations (autoNote tokens).
+      columnHelper.display({
+        id: "autoNote",
+        header: () => t("asset:valueHistory.auto_note"),
+        size: 220,
+        enableSorting: false,
+        enableResizing: false,
         cell: ({ row }) => {
-          const autoLabel = translateAutoNote(row.original.autoNote, t);
-          const userNotes = row.original.notes;
+          const label = translateAutoNote(row.original.autoNote, t);
+          if (!label) return null;
           return (
-            <span className="flex size-full items-center px-2 text-sm">
-              {autoLabel && <span className="text-muted-foreground mr-1 italic">{autoLabel}</span>}
-              {autoLabel && userNotes && <span className="text-muted-foreground mr-1">·</span>}
-              {userNotes && <span>{userNotes}</span>}
+            <span className="text-muted-foreground flex size-full items-center px-2 text-sm italic">
+              {label}
             </span>
           );
         },
+      }),
+      // Editable user notes column — uses LongTextCell so the grid's inline
+      // editing (popover textarea) works normally.
+      columnHelper.accessor("notes", {
+        header: t("asset:valueHistory.notes"),
+        size: 220,
+        meta: { cell: { variant: "long-text" } },
       }),
       // Actions column with delete button
       columnHelper.display({
@@ -598,25 +653,27 @@ export function ValueHistoryDataGrid({
 
       const updated = nextData.map((entry) => {
         const previous = prevById.get(entry.id);
-        // Normalize date (DateCell returns string, we need Date)
-        const normalizedEntry = {
-          ...entry,
-          date: normalizeDate(entry.date),
-        };
+        const normalizedDate = normalizeDate(entry.date);
 
         if (!previous) {
           changedIds.push(entry.id);
-          return normalizedEntry;
+          return { ...entry, date: normalizedDate };
         }
 
-        // Check if any field changed
-        const dateChanged = normalizedEntry.date.getTime() !== previous.date.getTime();
+        // Check if any editable field changed
+        const dateChanged = normalizedDate.getTime() !== previous.date.getTime();
         const valueChanged = entry.value !== previous.value;
         const notesChanged = entry.notes !== previous.notes;
 
         if (dateChanged || valueChanged || notesChanged) {
           changedIds.push(entry.id);
-          return normalizedEntry;
+          // Merge onto previous to preserve non-column fields (autoNote, interest, principal, currency, isNew)
+          return {
+            ...previous,
+            date: normalizedDate,
+            value: entry.value,
+            notes: entry.notes,
+          };
         }
 
         return previous;
