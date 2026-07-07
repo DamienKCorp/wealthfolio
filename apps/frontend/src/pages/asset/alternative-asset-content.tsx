@@ -175,6 +175,36 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     return marketValue - liabilityTotal;
   }, [marketValue, linkedLiabilities]);
 
+  // Build amortization metadata for liabilities when all required fields are present
+  const liabilityMeta = useMemo((): LiabilityAmortizationMeta | undefined => {
+    if (!isLiability || !holding.metadata) return undefined;
+    const meta = holding.metadata;
+    const originalAmount = parseFloat(
+      ((meta.original_amount ?? meta.purchase_price) as string | undefined) ?? "",
+    );
+    const annualInterestRate = parseFloat((meta.interest_rate as string | undefined) ?? "");
+    const originationDateStr = (meta.origination_date ?? meta.purchase_date) as string | undefined;
+    if (!originationDateStr) return undefined;
+    const originationDate = parseLocalDate(originationDateStr);
+
+    let termMonths: number | undefined;
+    if (meta.loan_term_years) {
+      termMonths = parseInt(meta.loan_term_years as string, 10) * 12;
+    }
+
+    if (
+      isNaN(originalAmount) ||
+      originalAmount <= 0 ||
+      isNaN(annualInterestRate) ||
+      !termMonths ||
+      termMonths <= 0
+    ) {
+      return undefined;
+    }
+
+    return { originalAmount, annualInterestRate, originationDate, termMonths };
+  }, [isLiability, holding.metadata]);
+
   if (activeTab === "overview") {
     return (
       <div className="space-y-4">
@@ -323,37 +353,6 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       </div>
     );
   }
-
-  // Build amortization metadata for liabilities when all required fields are present
-  const liabilityMeta = useMemo((): LiabilityAmortizationMeta | undefined => {
-    if (!isLiability || !holding.metadata) return undefined;
-    const meta = holding.metadata;
-    const originalAmount = parseFloat(
-      ((meta.original_amount ?? meta.purchase_price) as string | undefined) ?? "",
-    );
-    const annualInterestRate = parseFloat((meta.interest_rate as string | undefined) ?? "");
-    const originationDateStr = (meta.origination_date ?? meta.purchase_date) as string | undefined;
-    if (!originationDateStr) return undefined;
-    const originationDate = parseLocalDate(originationDateStr);
-
-    // Determine term: prefer explicit loan_term_years, fall back to maturity_date distance
-    let termMonths: number | undefined;
-    if (meta.loan_term_years) {
-      termMonths = parseInt(meta.loan_term_years as string, 10) * 12;
-    }
-
-    if (
-      isNaN(originalAmount) ||
-      originalAmount <= 0 ||
-      isNaN(annualInterestRate) ||
-      !termMonths ||
-      termMonths <= 0
-    ) {
-      return undefined;
-    }
-
-    return { originalAmount, annualInterestRate, originationDate, termMonths };
-  }, [isLiability, holding.metadata]);
 
   // History tab
   return (
