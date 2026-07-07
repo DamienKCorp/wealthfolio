@@ -476,7 +476,9 @@ export function ValueHistoryDataGrid({
       // Keep every existing entry strictly before the repayment date (those are
       // unaffected history). Any entry on or after the repayment date is replaced
       // by: repaymentEntry (balance snapshot) + regenerated schedule.
-      const beforeRepayment = localEntries.filter((e) => e.date.getTime() < repaymentDateMs);
+      const beforeRepayment = localEntries.filter(
+        (e) => e.date.getTime() < repaymentDateMs,
+      );
       const newEntries = [...beforeRepayment, repaymentEntry, ...futureEntries];
 
       setLocalEntries(newEntries);
