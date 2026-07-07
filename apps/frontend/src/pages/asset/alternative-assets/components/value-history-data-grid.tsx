@@ -754,7 +754,7 @@ export function ValueHistoryDataGrid({
     (rowIndex: number, _columnId: string): CellValidationState | null => {
       const row = tableRef.current?.getRowModel().rows[rowIndex];
       if (!row) return null;
-      if (row.original.date < today) return { type: "success", messages: [] };
+      if (row.original.date <= today) return { type: "success", messages: [] };
       return null;
     },
     [today],

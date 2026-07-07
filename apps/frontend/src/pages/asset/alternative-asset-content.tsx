@@ -538,7 +538,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
     today.setHours(0, 0, 0, 0);
     if (quoteHistory && quoteHistory.length > 0) {
       const futureQuotes = quoteHistory
-        .filter((q) => new Date(q.timestamp) > today)
+        .filter((q) => new Date(q.timestamp) >= today)
         .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
       for (const q of futureQuotes) {
         const { interest, principal } = parseAmortizationNotes(q.notes);
