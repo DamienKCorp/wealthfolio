@@ -7,6 +7,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@wealthfolio/ui/components/ui/sheet";
+import { localizeActivityTypeName } from "@/lib/activity-utils";
 import { ActivityType, ActivityTypeNames } from "@/lib/constants";
 import { DateRangeFilter } from "@/features/spending/components/date-range-filter";
 import { Account, AccountScope, PortfolioWithAccounts } from "@/lib/types";
@@ -85,8 +86,8 @@ export const ActivityMobileFilterSheet = ({
     setLocalAccountScope(scopeFromAccountIds(next));
   };
 
-  const activityTypeOptions = Object.entries(ActivityTypeNames).map(([value, label]) => ({
-    label,
+  const activityTypeOptions = Object.keys(ActivityTypeNames).map((value) => ({
+    label: localizeActivityTypeName(t, value),
     value: value as ActivityType,
   }));
 

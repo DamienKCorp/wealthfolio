@@ -13,14 +13,12 @@ import {
   type SymbolSearchResult,
 } from "@wealthfolio/ui";
 
+import { ActivityType, INSTRUMENT_TYPE_OPTIONS, SUBTYPES_BY_ACTIVITY_TYPE } from "@/lib/constants";
 import {
-  ActivityType,
-  ActivityTypeNames,
-  INSTRUMENT_TYPE_OPTIONS,
-  SUBTYPES_BY_ACTIVITY_TYPE,
-  SUBTYPE_DISPLAY_NAMES,
-} from "@/lib/constants";
-import { needsImportAssetResolution } from "@/lib/activity-utils";
+  localizeActivitySubtypeName,
+  localizeActivityTypeName,
+  needsImportAssetResolution,
+} from "@/lib/activity-utils";
 import { quoteModeFromSearchResult } from "@/lib/asset-utils";
 import { ActivityTypeBadge } from "../../components/activity-type-badge";
 import type { DraftActivity, DraftActivityStatus } from "../context";
@@ -148,23 +146,26 @@ function useImportReviewColumns({
     () =>
       importProfile.allowedActivityTypes.map((type) => ({
         value: type,
-        label: ActivityTypeNames[type],
+        label: localizeActivityTypeName(t, type),
       })),
-    [importProfile.allowedActivityTypes],
+    [importProfile.allowedActivityTypes, t],
   );
 
   // Dynamic subtype options based on activity type
-  const getSubtypeOptions = useCallback((rowData: unknown) => {
-    const draft = rowData as DraftActivity;
-    const activityType = draft.activityType?.toUpperCase();
-    if (!activityType) return [];
+  const getSubtypeOptions = useCallback(
+    (rowData: unknown) => {
+      const draft = rowData as DraftActivity;
+      const activityType = draft.activityType?.toUpperCase();
+      if (!activityType) return [];
 
-    const allowedSubtypes = SUBTYPES_BY_ACTIVITY_TYPE[activityType] || [];
-    return allowedSubtypes.map((subtype) => ({
-      value: subtype,
-      label: SUBTYPE_DISPLAY_NAMES[subtype] || subtype,
-    }));
-  }, []);
+      const allowedSubtypes = SUBTYPES_BY_ACTIVITY_TYPE[activityType] || [];
+      return allowedSubtypes.map((subtype) => ({
+        value: subtype,
+        label: localizeActivitySubtypeName(t, subtype),
+      }));
+    },
+    [t],
+  );
 
   return useMemo<ColumnDef<DraftActivity>[]>(() => {
     const visibleDataColumns = new Set<string>(importProfile.reviewColumns);

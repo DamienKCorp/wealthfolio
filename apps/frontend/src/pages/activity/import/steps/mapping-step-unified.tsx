@@ -127,8 +127,8 @@ export function MappingStepUnified() {
   );
   const getActivityTypeLabel = useCallback(
     (activityType: ActivityType) =>
-      getActivityTypeLabelForImportProfile(activityType, importProfile),
-    [importProfile],
+      getActivityTypeLabelForImportProfile(activityType, importProfile, t),
+    [importProfile, t],
   );
 
   const effectiveActivityMappings = useMemo(

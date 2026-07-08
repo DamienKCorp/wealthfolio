@@ -29,7 +29,8 @@ import {
   isSplitActivity,
   formatSplitRatio,
 } from "@/lib/activity-utils";
-import { ActivityType, SUBTYPE_DISPLAY_NAMES, getExchangeDisplayName } from "@/lib/constants";
+import { localizeActivitySubtypeName } from "@/lib/activity-utils";
+import { ActivityType, getExchangeDisplayName } from "@/lib/constants";
 import { ActivityDetails } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 import { useSettingsContext } from "@/lib/settings-provider";
@@ -129,7 +130,7 @@ export const ActivityTable = ({
           const normalizedSubtype = row.original.subtype?.trim().toUpperCase();
           const subtypeLabel =
             normalizedSubtype && normalizedSubtype !== normalizedActivityType
-              ? (SUBTYPE_DISPLAY_NAMES[normalizedSubtype] ?? row.original.subtype)
+              ? localizeActivitySubtypeName(t, normalizedSubtype)
               : undefined;
 
           return (

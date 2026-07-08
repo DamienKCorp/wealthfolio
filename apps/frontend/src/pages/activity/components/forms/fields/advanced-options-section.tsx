@@ -23,11 +23,8 @@ import { FormDescription } from "@wealthfolio/ui/components/ui/form";
 import { CurrencyInput, MoneyInput } from "@wealthfolio/ui/components/financial";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Button } from "@wealthfolio/ui/components/ui/button";
-import {
-  SUBTYPES_BY_ACTIVITY_TYPE,
-  SUBTYPE_DISPLAY_NAMES,
-  type ActivityType,
-} from "@/lib/constants";
+import { localizeActivitySubtypeName } from "@/lib/activity-utils";
+import { SUBTYPES_BY_ACTIVITY_TYPE, type ActivityType } from "@/lib/constants";
 
 interface AdvancedOptionsSectionProps<TFieldValues extends FieldValues = FieldValues> {
   /** Field name for the currency value */
@@ -290,7 +287,7 @@ export function AdvancedOptionsSection<TFieldValues extends FieldValues = FieldV
                           </SelectItem>
                           {availableSubtypes.map((subtype) => (
                             <SelectItem key={subtype} value={subtype}>
-                              {SUBTYPE_DISPLAY_NAMES[subtype] || subtype}
+                              {localizeActivitySubtypeName(t, subtype)}
                             </SelectItem>
                           ))}
                         </SelectContent>

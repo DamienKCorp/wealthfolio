@@ -3,18 +3,19 @@ import {
   isAssetBackedIncomeSubtype,
   isAssetIdentityRequired,
   isCashActivity,
+  localizeActivitySubtypeName,
+  localizeActivityTypeName,
 } from "@/lib/activity-utils";
 import {
   ActivityStatus,
   ActivityType,
-  ActivityTypeNames,
   INSTRUMENT_TYPE_OPTIONS,
   getExchangeDisplayName,
-  SUBTYPE_DISPLAY_NAMES,
   SUBTYPES_BY_ACTIVITY_TYPE,
 } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import type { Account, ActivityDetails } from "@/lib/types";
+import type { TFunction } from "i18next";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Badge, Checkbox, type SymbolSearchResult } from "@wealthfolio/ui";
 import { useCallback, useMemo } from "react";
@@ -60,9 +61,8 @@ const shouldDisplaySubtype = (
   );
 };
 
-const getSubtypeDisplayLabel = (subtype: string, optionLabel?: string): string => {
-  const normalizedSubtype = normalizeActivityToken(subtype);
-  return optionLabel ?? SUBTYPE_DISPLAY_NAMES[normalizedSubtype] ?? subtype;
+const getSubtypeDisplayLabel = (t: TFunction, subtype: string, optionLabel?: string): string => {
+  return optionLabel ?? localizeActivitySubtypeName(t, subtype);
 };
 
 interface UseActivityColumnsOptions {
@@ -97,9 +97,9 @@ export function useActivityColumns({
     () =>
       (Object.values(ActivityType) as ActivityType[]).map((type) => ({
         value: type,
-        label: ActivityTypeNames[type],
+        label: localizeActivityTypeName(t, type),
       })),
-    [],
+    [t],
   );
 
   const accountOptions = useMemo(
@@ -225,7 +225,7 @@ export function useActivityColumns({
               const allowedSubtypes = SUBTYPES_BY_ACTIVITY_TYPE[activityType] || [];
               return allowedSubtypes.map((subtype) => ({
                 value: subtype,
-                label: SUBTYPE_DISPLAY_NAMES[subtype] || subtype,
+                label: localizeActivitySubtypeName(t, subtype),
               }));
             }) as any,
             allowEmpty: true,
@@ -236,7 +236,7 @@ export function useActivityColumns({
                 return null;
               }
 
-              const displayLabel = getSubtypeDisplayLabel(value, option?.label);
+              const displayLabel = getSubtypeDisplayLabel(t, value, option?.label);
 
               return (
                 <Badge

@@ -1,9 +1,5 @@
-import {
-  ActivityStatus,
-  ActivityType,
-  ActivityTypeNames,
-  SUBTYPE_DISPLAY_NAMES,
-} from "@/lib/constants";
+import { localizeActivitySubtypeName, localizeActivityTypeName } from "@/lib/activity-utils";
+import { ActivityStatus, ActivityType } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import type { ActivityDetails } from "@/lib/types";
 import {
@@ -86,9 +82,7 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
       : (activity.status ?? "")
     : null;
 
-  const subtypeDisplay = activity.subtype
-    ? SUBTYPE_DISPLAY_NAMES[activity.subtype] || activity.subtype
-    : null;
+  const subtypeDisplay = activity.subtype ? localizeActivitySubtypeName(t, activity.subtype) : null;
 
   const formatDate = (date: Date | string | undefined) => {
     if (!date) return "—";
@@ -136,7 +130,7 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-muted-foreground mb-1 text-xs uppercase tracking-wide">
-                  {ActivityTypeNames[activity.activityType] || activity.activityType}
+                  {localizeActivityTypeName(t, activity.activityType)}
                 </div>
                 {parsedOption ? (
                   <>
@@ -191,7 +185,7 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
               label={t("activity:table_type")}
               value={
                 <Badge variant="outline">
-                  {ActivityTypeNames[activity.activityType] || activity.activityType}
+                  {localizeActivityTypeName(t, activity.activityType)}
                 </Badge>
               }
             />

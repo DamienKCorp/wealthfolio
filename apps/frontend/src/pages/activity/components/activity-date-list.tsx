@@ -9,7 +9,8 @@ import {
   isIncomeActivity,
   isSplitActivity,
 } from "@/lib/activity-utils";
-import { ActivityType, ActivityTypeNames } from "@/lib/constants";
+import { localizeActivityTypeName } from "@/lib/activity-utils";
+import { ActivityType } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import { useSettingsContext } from "@/lib/settings-provider";
 import type { ActivityDetails } from "@/lib/types";
@@ -184,7 +185,7 @@ function ActivityDateListItem({
     : null;
   const formattedDate = formatDateTime(activity.date, appTimezone);
   const displayValue = calculateActivityValue(activity);
-  const activityTypeLabel = ActivityTypeNames[activity.activityType];
+  const activityTypeLabel = localizeActivityTypeName(t, activity.activityType);
   const activityTone = getActivityTone(activity.activityType);
   const quantityLabel =
     !isCash &&
@@ -325,7 +326,7 @@ function CashAuditSummary({
             <Icons.AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
             <span>
               {t("activity:date_list.cash_negative_after", {
-                type: ActivityTypeNames[crossingRow.activity.activityType].toLowerCase(),
+                type: localizeActivityTypeName(t, crossingRow.activity.activityType),
               })}
             </span>
           </div>

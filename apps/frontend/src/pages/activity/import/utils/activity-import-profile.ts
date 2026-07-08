@@ -1,3 +1,5 @@
+import type { TFunction } from "i18next";
+import { localizeActivityTypeName } from "@/lib/activity-utils";
 import {
   AccountType,
   ActivityType,
@@ -258,8 +260,12 @@ export function activityTypeAllowedForImportProfile(
 export function getActivityTypeLabelForImportProfile(
   activityType: ActivityType,
   profile: ActivityImportProfile,
+  t?: TFunction,
 ): string {
-  return profile.activityTypeLabels?.[activityType] ?? ActivityTypeNames[activityType];
+  return (
+    profile.activityTypeLabels?.[activityType] ??
+    (t ? localizeActivityTypeName(t, activityType) : ActivityTypeNames[activityType])
+  );
 }
 
 function appendAliases(

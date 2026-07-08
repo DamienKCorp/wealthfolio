@@ -7,7 +7,8 @@ import {
   getTransferPairForActivity,
   searchActivities,
 } from "@/adapters";
-import { ActivityStatus, ActivityType, ActivityTypeNames } from "@/lib/constants";
+import { localizeActivityTypeName } from "@/lib/activity-utils";
+import { ActivityStatus, ActivityType } from "@/lib/constants";
 import type { Account, Activity, ActivityDetails, TransferMatchCandidate } from "@/lib/types";
 import { cn, formatDateISO, formatDateTime } from "@/lib/utils";
 import {
@@ -842,7 +843,7 @@ export function TransferMatchDialog({
                     <div className="text-muted-foreground text-xs">
                       {t("activity:transfer_match.only_type_searched", {
                         type: oppositeType
-                          ? (ActivityTypeNames[oppositeType] ?? oppositeType)
+                          ? localizeActivityTypeName(t, oppositeType)
                           : t("activity:transfer_match.opposite_transfer"),
                       })}
                     </div>

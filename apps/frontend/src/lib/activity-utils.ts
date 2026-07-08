@@ -1,15 +1,37 @@
+import type { TFunction } from "i18next";
 import {
   ACTIVITY_SUBTYPES,
   ActivityType,
+  ActivityTypeNames,
   DECIMAL_PRECISION,
   INCOME_ACTIVITY_TYPES,
   InstrumentType,
   METADATA_CONTRACT_MULTIPLIER,
   normalizePositionIntentAlias,
   POSITION_INTENT_ALIASES,
+  SUBTYPE_DISPLAY_NAMES,
   SYMBOL_REQUIRED_TYPES,
 } from "./constants";
 import { ActivityDetails } from "./types";
+
+/**
+ * Localized display name for an activity type (e.g. BUY -> "Buy" / "买入").
+ * Falls back to the English name from {@link ActivityTypeNames}.
+ */
+export const localizeActivityTypeName = (t: TFunction, activityType: string): string => {
+  const fallback = (ActivityTypeNames as Record<string, string>)[activityType] ?? activityType;
+  return t(`activity:type_${activityType.toLowerCase()}`, fallback);
+};
+
+/**
+ * Localized display name for an activity subtype (e.g. DRIP, POSITION_OPEN).
+ * Falls back to the English name from {@link SUBTYPE_DISPLAY_NAMES}, then the raw value.
+ */
+export const localizeActivitySubtypeName = (t: TFunction, subtype: string): string => {
+  const normalized = subtype.trim().toUpperCase();
+  const fallback = SUBTYPE_DISPLAY_NAMES[normalized] ?? subtype;
+  return t(`activity:subtype_${normalized.toLowerCase()}`, fallback);
+};
 
 const roundCurrency = (value: number, precision = DECIMAL_PRECISION) => {
   if (!Number.isFinite(value)) {

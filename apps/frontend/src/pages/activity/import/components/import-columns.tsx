@@ -2,14 +2,12 @@ import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Checkbox, type SymbolSearchResult } from "@wealthfolio/ui";
+import { ActivityType, INSTRUMENT_TYPE_OPTIONS, SUBTYPES_BY_ACTIVITY_TYPE } from "@/lib/constants";
 import {
-  ActivityType,
-  ActivityTypeNames,
-  INSTRUMENT_TYPE_OPTIONS,
-  SUBTYPES_BY_ACTIVITY_TYPE,
-  SUBTYPE_DISPLAY_NAMES,
-} from "@/lib/constants";
-import { needsImportAssetResolution } from "@/lib/activity-utils";
+  localizeActivitySubtypeName,
+  localizeActivityTypeName,
+  needsImportAssetResolution,
+} from "@/lib/activity-utils";
 import { ActivityTypeBadge } from "../../components/activity-type-badge";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,23 +101,26 @@ export function useImportColumns<T extends ImportRowData>({
     () =>
       Object.values(ActivityType).map((type) => ({
         value: type,
-        label: ActivityTypeNames[type],
+        label: localizeActivityTypeName(t, type),
       })),
-    [],
+    [t],
   );
 
   // Dynamic subtype options based on activity type
-  const getSubtypeOptions = useCallback((rowData: unknown) => {
-    const row = rowData as ImportRowData;
-    const activityType = row.activityType?.toUpperCase();
-    if (!activityType) return [];
+  const getSubtypeOptions = useCallback(
+    (rowData: unknown) => {
+      const row = rowData as ImportRowData;
+      const activityType = row.activityType?.toUpperCase();
+      if (!activityType) return [];
 
-    const allowedSubtypes = SUBTYPES_BY_ACTIVITY_TYPE[activityType] || [];
-    return allowedSubtypes.map((subtype) => ({
-      value: subtype,
-      label: SUBTYPE_DISPLAY_NAMES[subtype] || subtype,
-    }));
-  }, []);
+      const allowedSubtypes = SUBTYPES_BY_ACTIVITY_TYPE[activityType] || [];
+      return allowedSubtypes.map((subtype) => ({
+        value: subtype,
+        label: localizeActivitySubtypeName(t, subtype),
+      }));
+    },
+    [t],
+  );
 
   return useMemo<ColumnDef<T>[]>(() => {
     const columns: ColumnDef<T>[] = [];

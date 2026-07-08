@@ -11,7 +11,8 @@ import {
   isSecuritiesTransfer,
   isSplitActivity,
 } from "@/lib/activity-utils";
-import { ActivityType, ActivityTypeNames } from "@/lib/constants";
+import { localizeActivityTypeName } from "@/lib/activity-utils";
+import { ActivityType } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { ActivityDetails } from "@/lib/types";
@@ -119,7 +120,7 @@ export const ActivityTableMobile = ({
 
         // Compact View
         if (isCompactView) {
-          const activityTypeLabel = ActivityTypeNames[activity.activityType];
+          const activityTypeLabel = localizeActivityTypeName(t, activity.activityType);
           return (
             <Card key={activity.id} className="p-3">
               <div className="flex items-center gap-3">
