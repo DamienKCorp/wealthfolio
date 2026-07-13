@@ -12,9 +12,15 @@ const DECIMAL_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
   minimumFractionDigits: DISPLAY_DECIMAL_PRECISION,
   maximumFractionDigits: DISPLAY_DECIMAL_PRECISION,
 };
+const PRICE_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
+  minimumFractionDigits: DISPLAY_DECIMAL_PRECISION,
+  maximumFractionDigits: DECIMAL_PRECISION,
+};
 
 const decimalFormatter = new Intl.NumberFormat("en-US", DECIMAL_FORMAT_OPTIONS);
+const priceDecimalFormatter = new Intl.NumberFormat("en-US", PRICE_FORMAT_OPTIONS);
 const currencyFormatterCache = new Map<string, Intl.NumberFormat>();
+const priceCurrencyFormatterCache = new Map<string, Intl.NumberFormat>();
 const compactCurrencyFormatterCache = new Map<string, Intl.NumberFormat>();
 const currencySymbolFormatterCache = new Map<string, Intl.NumberFormat>();
 
@@ -38,6 +44,28 @@ const getCurrencyFormatter = (currency: string) => {
   }
 
   currencyFormatterCache.set(cacheKey, formatter);
+  return formatter;
+};
+
+const getPriceCurrencyFormatter = (currency: string) => {
+  const normalizedCurrency = currency?.toUpperCase?.() ?? "USD";
+
+  if (priceCurrencyFormatterCache.has(normalizedCurrency)) {
+    return priceCurrencyFormatterCache.get(normalizedCurrency)!;
+  }
+
+  let formatter: Intl.NumberFormat;
+  try {
+    formatter = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: normalizedCurrency,
+      ...PRICE_FORMAT_OPTIONS,
+    });
+  } catch {
+    formatter = priceDecimalFormatter;
+  }
+
+  priceCurrencyFormatterCache.set(normalizedCurrency, formatter);
   return formatter;
 };
 
@@ -121,6 +149,31 @@ export function formatAmount(
   }
 
   return getCurrencyFormatter(rawCurrency).format(displayAmount);
+}
+
+/** Format a per-unit price without discarding meaningful precision. */
+export function formatPrice(
+  amount: number | string | null | undefined,
+  currency: string,
+  displayCurrency = true,
+) {
+  if (amount == null) return "-";
+  const numericAmount = typeof amount === "string" ? Number(amount) : amount;
+  if (!Number.isFinite(numericAmount)) return "-";
+  const displayPrice = Math.abs(numericAmount) < 0.000000005 ? 0 : numericAmount;
+  const rawCurrency = currency ?? "USD";
+  const quoteUnit = getQuoteUnitCurrency(rawCurrency);
+
+  if (quoteUnit) {
+    const formattedNumber = priceDecimalFormatter.format(displayPrice);
+    return displayCurrency ? `${formattedNumber}${quoteUnit.symbol}` : formattedNumber;
+  }
+
+  if (!displayCurrency) {
+    return priceDecimalFormatter.format(displayPrice);
+  }
+
+  return getPriceCurrencyFormatter(rawCurrency).format(displayPrice);
 }
 
 export function formatCompactAmount(

@@ -6,6 +6,7 @@ import { Separator } from "@wealthfolio/ui/components/ui/separator";
 import { formatPercent } from "@wealthfolio/ui";
 import { GainPercent } from "@wealthfolio/ui";
 import { AmountDisplay } from "@wealthfolio/ui";
+import { PriceDisplay } from "@wealthfolio/ui";
 import { QuantityDisplay } from "@wealthfolio/ui";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 
@@ -112,7 +113,7 @@ const AssetDetailCard: React.FC<AssetDetailProps> = ({ assetData, className }) =
     },
     {
       label: averageCostLabel,
-      value: <AmountDisplay value={averagePrice} currency={currency} isHidden={isBalanceHidden} />,
+      value: <PriceDisplay value={averagePrice} currency={currency} isHidden={isBalanceHidden} />,
     },
     { label: t("asset:detailCard.percent_of_portfolio"), value: formatPercent(portfolioPercent) },
   ];
@@ -264,7 +265,7 @@ const AssetDetailCard: React.FC<AssetDetailProps> = ({ assetData, className }) =
                     {t("asset:detailCard.open")}
                   </span>
                   <div className="text-sm font-medium">
-                    <AmountDisplay
+                    <PriceDisplay
                       value={quote.open}
                       currency={quoteCurrency ?? currency}
                       isHidden={isBalanceHidden}
@@ -276,7 +277,7 @@ const AssetDetailCard: React.FC<AssetDetailProps> = ({ assetData, className }) =
                     {t("asset:detailCard.close")}
                   </span>
                   <div className="text-sm font-medium">
-                    <AmountDisplay
+                    <PriceDisplay
                       value={quote.close}
                       currency={quoteCurrency ?? currency}
                       isHidden={isBalanceHidden}
@@ -288,7 +289,7 @@ const AssetDetailCard: React.FC<AssetDetailProps> = ({ assetData, className }) =
                     {t("asset:detailCard.high")}
                   </span>
                   <div className="text-success text-sm font-medium">
-                    <AmountDisplay
+                    <PriceDisplay
                       value={quote.high}
                       currency={quoteCurrency ?? currency}
                       isHidden={isBalanceHidden}
@@ -298,7 +299,7 @@ const AssetDetailCard: React.FC<AssetDetailProps> = ({ assetData, className }) =
                 <div className="flex flex-col items-end">
                   <span className="text-muted-foreground text-xs">{t("asset:detailCard.low")}</span>
                   <div className="text-destructive text-sm font-medium">
-                    <AmountDisplay
+                    <PriceDisplay
                       value={quote.low}
                       currency={quoteCurrency ?? currency}
                       isHidden={isBalanceHidden}
@@ -310,7 +311,7 @@ const AssetDetailCard: React.FC<AssetDetailProps> = ({ assetData, className }) =
                     {t("asset:detailCard.adj_close")}
                   </span>
                   <div className="text-sm font-medium">
-                    <AmountDisplay
+                    <PriceDisplay
                       value={quote.adjclose}
                       currency={quoteCurrency ?? currency}
                       isHidden={isBalanceHidden}
@@ -385,7 +386,7 @@ const AssetDetailCard: React.FC<AssetDetailProps> = ({ assetData, className }) =
                     {t("asset:detailCard.strike")}
                   </span>
                   <div className="text-sm font-medium">
-                    <AmountDisplay
+                    <PriceDisplay
                       value={optionSpec.strike}
                       currency={quoteCurrency ?? currency}
                       isHidden={isBalanceHidden}

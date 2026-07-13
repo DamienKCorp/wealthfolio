@@ -116,7 +116,7 @@ export interface AddonNetworkResponse {
 }
 
 export interface AddonNetworkAuth {
-  type: "bearer";
+  type: "bearer" | "basic";
   secretKey: string;
 }
 

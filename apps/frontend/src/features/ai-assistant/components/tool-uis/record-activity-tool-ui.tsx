@@ -1,6 +1,15 @@
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Skeleton } from "@wealthfolio/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  formatPrice,
+  Skeleton,
+} from "@wealthfolio/ui";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { memo, useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -670,7 +679,11 @@ function DraftReview({
         {draft.unitPrice !== undefined && (
           <ReviewField
             label={t("ai:recordActivity.unitPrice")}
-            value={formatAmount(draft.unitPrice)}
+            value={
+              isBalanceHidden
+                ? "\u2022\u2022\u2022\u2022\u2022"
+                : formatPrice(draft.unitPrice, draft.currency)
+            }
           />
         )}
         {draft.amount !== undefined && (

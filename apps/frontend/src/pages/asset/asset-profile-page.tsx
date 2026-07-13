@@ -948,7 +948,6 @@ export const AssetProfilePage = () => {
         data={quoteHistory ?? []}
         assetId={assetId}
         currency={quote?.currency ?? profile?.currency ?? baseCurrency}
-        assetKind={assetProfile?.kind}
         isManualDataSource={isManualPricingMode}
         onSaveQuote={(q: Quote) => saveQuoteMutation.mutate(q)}
         onDeleteQuote={(id: string) => deleteQuoteMutation.mutate(id)}
@@ -1175,7 +1174,6 @@ export const AssetProfilePage = () => {
               data={quoteHistory ?? []}
               assetId={assetId}
               currency={profile?.currency ?? baseCurrency}
-              assetKind={assetProfile?.kind}
               isManualDataSource={isManualPricingMode}
               onSaveQuote={(quote: Quote) => saveQuoteMutation.mutate(quote)}
               onDeleteQuote={(id: string) => deleteQuoteMutation.mutate(id)}

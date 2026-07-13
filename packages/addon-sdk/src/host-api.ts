@@ -775,7 +775,11 @@ export interface NetworkResponse {
 }
 
 export interface NetworkAuth {
-  type: 'bearer';
+  /**
+   * Authorization scheme. For `basic`, the stored secret must be the
+   * base64-encoded `user:pass` value.
+   */
+  type: 'bearer' | 'basic';
   secretKey: string;
 }
 

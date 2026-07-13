@@ -31,7 +31,7 @@ declare module "@tanstack/react-table" {
 import {
   Button,
   DatePickerInput,
-  formatAmount,
+  formatPrice,
   Icons,
   Input,
   Label,
@@ -199,7 +199,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               onChange={(e) => handleInputChange("open", e.target.value)}
             />
           ) : (
-            formatAmount(value, info.row.original.currency, false)
+            formatPrice(value, info.row.original.currency, false)
           );
         },
         enableSorting: false,
@@ -217,7 +217,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               autoFocus={true}
             />
           ) : (
-            formatAmount(value, info.row.original.currency, false)
+            formatPrice(value, info.row.original.currency, false)
           );
         },
         enableSorting: false,
@@ -234,7 +234,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               onChange={(e) => handleInputChange("low", e.target.value)}
             />
           ) : (
-            formatAmount(value, info.row.original.currency, false)
+            formatPrice(value, info.row.original.currency, false)
           );
         },
         enableSorting: false,
@@ -251,7 +251,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               onChange={(e) => handleInputChange("close", e.target.value)}
             />
           ) : (
-            formatAmount(value, info.row.original.currency, false)
+            formatPrice(value, info.row.original.currency, false)
           );
         },
         enableSorting: false,

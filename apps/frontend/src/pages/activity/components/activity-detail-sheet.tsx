@@ -6,6 +6,7 @@ import {
   Badge,
   Button,
   Icons,
+  PriceDisplay,
   Separator,
   Sheet,
   SheetContent,
@@ -210,7 +211,7 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
               <DetailRow
                 label={t("activity:detail.strike_price")}
                 value={
-                  <AmountDisplay value={parsedOption.strikePrice} currency={activity.currency} />
+                  <PriceDisplay value={parsedOption.strikePrice} currency={activity.currency} />
                 }
               />
               <DetailRow label={t("activity:detail.expiration")} value={optionExpirationDisplay} />
@@ -237,7 +238,7 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
                   isOption ? t("activity:detail.premium_share") : t("activity:activity_unit_price")
                 }
                 value={
-                  <AmountDisplay value={Number(activity.unitPrice)} currency={activity.currency} />
+                  <PriceDisplay value={Number(activity.unitPrice)} currency={activity.currency} />
                 }
               />
             )}

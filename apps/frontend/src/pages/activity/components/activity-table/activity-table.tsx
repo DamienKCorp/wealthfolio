@@ -44,7 +44,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { Button, EmptyPlaceholder, formatAmount } from "@wealthfolio/ui";
+import { Button, EmptyPlaceholder, formatAmount, formatPrice } from "@wealthfolio/ui";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useActivityMutations } from "../../hooks/use-activity-mutations";
@@ -359,7 +359,7 @@ export const ActivityTable = ({
             return <div className="text-right">{formatAmount(Number(amount), currency)}</div>;
           }
 
-          return <div className="text-right">{formatAmount(unitPrice, currency)}</div>;
+          return <div className="text-right">{formatPrice(unitPrice, currency)}</div>;
         },
       },
       {

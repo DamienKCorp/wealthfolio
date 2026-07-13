@@ -18,7 +18,7 @@ import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { HoldingType } from "@/lib/constants";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { Holding } from "@/lib/types";
-import { AmountDisplay, QuantityDisplay, formatPercent } from "@wealthfolio/ui";
+import { AmountDisplay, PriceDisplay, QuantityDisplay, formatPercent } from "@wealthfolio/ui";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
 import { useState } from "react";
@@ -335,7 +335,7 @@ const getColumns = (
       const currency = holding.localCurrency;
       return (
         <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
-          <AmountDisplay value={price} currency={currency} />
+          <PriceDisplay value={price} currency={currency} />
           <GainPercent className="text-xs" value={holding.dayChangePct || 0} />
         </div>
       );
@@ -364,7 +364,7 @@ const getColumns = (
           {averagePrice == null ? (
             <span className="text-muted-foreground">-</span>
           ) : (
-            <AmountDisplay
+            <PriceDisplay
               value={averagePrice}
               currency={row.original.localCurrency}
               isHidden={isHidden}

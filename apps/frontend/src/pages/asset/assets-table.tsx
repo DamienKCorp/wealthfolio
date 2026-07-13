@@ -29,7 +29,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/compone
 
 import { ASSET_KIND_DISPLAY_NAMES, LatestQuoteSnapshot } from "@/lib/types";
 import { parseOccSymbol } from "@/lib/occ-symbol";
-import { formatAmount, formatDate } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { formatPrice } from "@wealthfolio/ui";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { getNoQuoteReasonText, isStaleQuote, ParsedAsset } from "./asset-utils";
 
@@ -259,7 +260,7 @@ export function AssetsTable({
                   </Tooltip>
                 ) : null}
                 <span className="font-semibold tabular-nums">
-                  {formatAmount(quote.close, quote.currency ?? asset.quoteCcy ?? baseCurrency)}
+                  {formatPrice(quote.close, quote.currency ?? asset.quoteCcy ?? baseCurrency)}
                 </span>
               </div>
               <div className="text-muted-foreground text-[11px]">{formatDate(quote.timestamp)}</div>

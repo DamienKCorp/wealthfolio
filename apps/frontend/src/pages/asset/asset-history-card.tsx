@@ -25,6 +25,7 @@ import {
   HoverCardTrigger,
   Icons,
   IntervalSelector,
+  PriceDisplay,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -187,7 +188,7 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
               <HoverCardTrigger asChild className="cursor-pointer">
                 <div>
                   <p className="pt-3 text-xl font-bold">
-                    <AmountDisplay
+                    <PriceDisplay
                       value={marketPrice}
                       currency={currency}
                       isHidden={isBalanceHidden}

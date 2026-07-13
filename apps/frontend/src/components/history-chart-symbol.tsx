@@ -1,6 +1,6 @@
 import { TimePeriod } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
-import { formatAmount } from "@wealthfolio/ui";
+import { formatPrice } from "@wealthfolio/ui";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -248,7 +248,7 @@ function SymbolToolTip({ active, payload }: SymbolTooltipProps) {
     <div className="bg-popover pointer-events-none grid grid-cols-1 gap-1.5 rounded-md border p-2 shadow-md">
       <p className="text-muted-foreground text-xs">{formatDate(data.timestamp)}</p>
 
-      <p className="text-base font-bold">{formatAmount(payload[0].value, data.currency, false)}</p>
+      <p className="text-base font-bold">{formatPrice(payload[0].value, data.currency, false)}</p>
 
       {data.activities && data.activities.length > 0 && (
         <>
@@ -273,7 +273,7 @@ function SymbolToolTip({ active, payload }: SymbolTooltipProps) {
                 {hasPriceDetails && (
                   <span className="text-muted-foreground text-sm tabular-nums">
                     {parseFloat(act.quantity || "0")} at{" "}
-                    {formatAmount(parseFloat(act.unitPrice || "0"), data.currency, false)}
+                    {formatPrice(parseFloat(act.unitPrice || "0"), data.currency, false)}
                   </span>
                 )}
               </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Button, Card, CardContent, Icons, Skeleton } from "@wealthfolio/ui";
+import { Button, Card, CardContent, formatPrice, Icons, Skeleton } from "@wealthfolio/ui";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -312,7 +312,7 @@ function exportCsv(plan: RebalancePlan, currency: string, profileName: string, t
       t.holdingId ?? "",
       t.estimatedAmount.toFixed(fractionDigits),
       t.quantity != null ? t.quantity.toFixed(t.quantity % 1 === 0 ? 0 : 4) : "",
-      t.estimatedPrice != null ? t.estimatedPrice.toFixed(fractionDigits) : "",
+      t.estimatedPrice != null ? String(t.estimatedPrice) : "",
       t.reason,
     ]
       .map(csvCell)
@@ -359,7 +359,7 @@ function copyToText(plan: RebalancePlan, currency: string, t: TFunction) {
         (trade.quantity != null
           ? `  ${t("allocation:copyText.shares", { qty: trade.quantity.toFixed(trade.quantity % 1 === 0 ? 0 : 4) })}`
           : "") +
-        (trade.estimatedPrice != null ? ` @ ${formatAmount(trade.estimatedPrice, currency)}` : ""),
+        (trade.estimatedPrice != null ? ` @ ${formatPrice(trade.estimatedPrice, currency)}` : ""),
     ),
   ];
   if (plan.warnings.length) {
@@ -1178,9 +1178,7 @@ function TradesTable({ trades, currency }: { trades: SuggestedManualTrade[]; cur
                   {t("allocation:trades.price")}
                 </div>
                 <div className="text-foreground mt-1 tabular-nums">
-                  {trade.estimatedPrice != null
-                    ? formatAmount(trade.estimatedPrice, currency)
-                    : "—"}
+                  {trade.estimatedPrice != null ? formatPrice(trade.estimatedPrice, currency) : "—"}
                 </div>
               </div>
               <div className="min-w-0">
@@ -1273,9 +1271,7 @@ function TradesTable({ trades, currency }: { trades: SuggestedManualTrade[]; cur
                   {tradeQuantityLabel(trade.quantity)}
                 </td>
                 <td className="text-muted-foreground pr-7 text-right tabular-nums">
-                  {trade.estimatedPrice != null
-                    ? formatAmount(trade.estimatedPrice, currency)
-                    : "—"}
+                  {trade.estimatedPrice != null ? formatPrice(trade.estimatedPrice, currency) : "—"}
                 </td>
                 <td
                   className="text-muted-foreground max-w-0 truncate pl-10 pr-5 text-xs"

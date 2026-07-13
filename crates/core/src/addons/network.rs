@@ -139,9 +139,11 @@ pub fn resolve_addon_network_auth_header(
     let Some(auth) = auth else {
         return Ok(None);
     };
-    if auth.auth_type != "bearer" {
-        return Err("Addon network auth type is not supported".to_string());
-    }
+    let scheme = match auth.auth_type.as_str() {
+        "bearer" => "Bearer",
+        "basic" => "Basic",
+        _ => return Err("Addon network auth type is not supported".to_string()),
+    };
     let service_id = addon_secret_service_id(addon_id, &auth.secret_key)?;
     let legacy_service_id = legacy_addon_secret_service_id(addon_id, &auth.secret_key)?;
     let secret = match secret_store
@@ -157,7 +159,7 @@ pub fn resolve_addon_network_auth_header(
     if secret.trim().is_empty() {
         return Err("Addon network auth secret is empty".to_string());
     }
-    Ok(Some(format!("Bearer {}", secret)))
+    Ok(Some(format!("{} {}", scheme, secret)))
 }
 
 fn validate_url(url: &str, allowed_hosts: &[String]) -> Result<Url, String> {
@@ -401,6 +403,27 @@ mod tests {
     }
 
     #[test]
+    fn resolves_basic_auth_from_addon_scoped_secret() {
+        let store = TestSecretStore {
+            secrets: BTreeMap::from([(
+                "addon:example-addon:simplefin-access".to_string(),
+                "dXNlcjpwYXNz".to_string(),
+            )]),
+        };
+        let header = resolve_addon_network_auth_header(
+            "example-addon",
+            Some(&AddonNetworkAuth {
+                auth_type: "basic".to_string(),
+                secret_key: "simplefin-access".to_string(),
+            }),
+            &store,
+        )
+        .unwrap();
+
+        assert_eq!(header, Some("Basic dXNlcjpwYXNz".to_string()));
+    }
+
+    #[test]
     fn rejects_invalid_network_auth_requests() {
         let store = TestSecretStore {
             secrets: BTreeMap::new(),
@@ -409,7 +432,7 @@ mod tests {
         assert!(resolve_addon_network_auth_header(
             "example-addon",
             Some(&AddonNetworkAuth {
-                auth_type: "basic".to_string(),
+                auth_type: "digest".to_string(),
                 secret_key: "api-token".to_string(),
             }),
             &store,

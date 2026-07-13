@@ -2,13 +2,13 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
-import { Badge, Card, Input } from "@wealthfolio/ui";
+import { Badge, Card, formatPrice, Input } from "@wealthfolio/ui";
 
 import { TickerAvatar } from "@/components/ticker-avatar";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { ASSET_KIND_DISPLAY_NAMES, LatestQuoteSnapshot } from "@/lib/types";
 import { parseOccSymbol } from "@/lib/occ-symbol";
-import { cn, formatAmount, formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { ScrollArea, Separator } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import {
@@ -256,7 +256,7 @@ export function AssetsTableMobile({
                       return (
                         <>
                           <div className="flex items-center justify-end gap-1 font-semibold">
-                            {formatAmount(
+                            {formatPrice(
                               quote.close,
                               quote.currency ?? asset.quoteCcy ?? baseCurrency,
                             )}

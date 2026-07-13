@@ -296,6 +296,30 @@ describe("Activity Utilities", () => {
       expect(calculateActivityValue(activity)).toBe(1010);
     });
 
+    it("should include tax in WITHDRAWAL activity value", () => {
+      const activity = createActivity({
+        activityType: ActivityType.WITHDRAWAL,
+        amount: "1000",
+        fee: "10",
+        tax: "5",
+      });
+
+      // 1000 + 10 + 5 = 1015
+      expect(calculateActivityValue(activity)).toBe(1015);
+    });
+
+    it("should deduct tax from CREDIT activity value", () => {
+      const activity = createActivity({
+        activityType: ActivityType.CREDIT,
+        amount: "100",
+        fee: "2",
+        tax: "10",
+      });
+
+      // 100 - 2 - 10 = 88
+      expect(calculateActivityValue(activity)).toBe(88);
+    });
+
     it("should calculate FEE activity value correctly", () => {
       const activity = createActivity({
         activityType: ActivityType.FEE,
@@ -303,6 +327,69 @@ describe("Activity Utilities", () => {
       });
 
       expect(calculateActivityValue(activity)).toBe(10);
+    });
+
+    it("should prefer fee over amount for FEE activities", () => {
+      const activity = createActivity({
+        activityType: ActivityType.FEE,
+        fee: "10",
+        amount: "25",
+      });
+
+      expect(calculateActivityValue(activity)).toBe(10);
+    });
+
+    it("should fall back to amount for FEE activities when fee is zero", () => {
+      const activity = createActivity({
+        activityType: ActivityType.FEE,
+        fee: "0",
+        amount: "25",
+      });
+
+      expect(calculateActivityValue(activity)).toBe(25);
+    });
+
+    it("should use tax for TAX activities when only tax is set", () => {
+      const activity = createActivity({
+        activityType: ActivityType.TAX,
+        tax: "15",
+        fee: "0",
+        amount: "0",
+      });
+
+      expect(calculateActivityValue(activity)).toBe(15);
+      expect(calculateActivityCashImpact(activity)).toBe(-15);
+    });
+
+    it("should prefer tax over fee and amount for TAX activities", () => {
+      const activity = createActivity({
+        activityType: ActivityType.TAX,
+        tax: "15",
+        fee: "10",
+        amount: "25",
+      });
+
+      expect(calculateActivityValue(activity)).toBe(15);
+    });
+
+    it("should fall back to fee, then amount for TAX activities", () => {
+      const withFee = createActivity({
+        activityType: ActivityType.TAX,
+        tax: "0",
+        fee: "10",
+        amount: "25",
+      });
+
+      expect(calculateActivityValue(withFee)).toBe(10);
+
+      const withAmount = createActivity({
+        activityType: ActivityType.TAX,
+        tax: "0",
+        fee: "0",
+        amount: "25",
+      });
+
+      expect(calculateActivityValue(withAmount)).toBe(25);
     });
 
     it("should calculate SPLIT activity value correctly", () => {
@@ -332,6 +419,30 @@ describe("Activity Utilities", () => {
       });
 
       expect(calculateActivityValue(transferOut)).toBe(1010);
+    });
+
+    it("should include tax in cash transfer activity values", () => {
+      const transferIn = createActivity({
+        activityType: ActivityType.TRANSFER_IN,
+        assetSymbol: "CASH:USD",
+        amount: "1000",
+        fee: "10",
+        tax: "5",
+      });
+
+      // 1000 - 10 - 5 = 985
+      expect(calculateActivityValue(transferIn)).toBe(985);
+
+      const transferOut = createActivity({
+        activityType: ActivityType.TRANSFER_OUT,
+        assetSymbol: "CASH:USD",
+        amount: "1000",
+        fee: "10",
+        tax: "5",
+      });
+
+      // 1000 + 10 + 5 = 1015
+      expect(calculateActivityValue(transferOut)).toBe(1015);
     });
 
     it("treats blank-asset transfers as cash and uses amount", () => {
@@ -447,9 +558,21 @@ describe("Activity Utilities", () => {
             activityType: ActivityType.WITHDRAWAL,
             amount: "100",
             fee: "5",
+            tax: "3",
           }),
         ),
-      ).toBe(-105);
+      ).toBe(-108);
+
+      expect(
+        calculateActivityCashImpact(
+          createActivity({
+            activityType: ActivityType.CREDIT,
+            amount: "100",
+            fee: "2",
+            tax: "10",
+          }),
+        ),
+      ).toBe(88);
 
       expect(
         calculateActivityCashImpact(

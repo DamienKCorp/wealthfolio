@@ -120,7 +120,7 @@ export const HoldingsEditMode = ({
         let averageCost = "";
         if (h.costBasis?.local && h.quantity > 0) {
           const avgCostValue = h.costBasis.local / h.quantity;
-          averageCost = avgCostValue.toFixed(4).replace(/\.?0+$/, "");
+          averageCost = avgCostValue.toFixed(8).replace(/\.?0+$/, "");
         }
         return {
           assetId: h.instrument?.id ?? h.id,

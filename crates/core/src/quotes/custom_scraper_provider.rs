@@ -1500,6 +1500,24 @@ mod tests {
     }
 
     #[test]
+    fn extract_json_rows_supports_unicode_keys() {
+        let body = r#"[
+            { "净值日期": "2026-07-10T00:00:00.000", "单位净值": 1.4018 },
+            { "净值日期": "2026-07-11T00:00:00.000", "单位净值": 1.4026 }
+        ]"#;
+        let mut source = json_source(r#"$[*]["单位净值"]"#);
+        source.date_path = Some(r#"$[*]["净值日期"]"#.to_string());
+
+        let rows = extract_json_rows(body, &source, "001097", Some("CNY"), None, None, None);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].date, Some(ymd(2026, 7, 10)));
+        assert_eq!(rows[0].close, 1.4018);
+        assert_eq!(rows[1].date, Some(ymd(2026, 7, 11)));
+        assert_eq!(rows[1].close, 1.4026);
+    }
+
+    #[test]
     fn parse_date_iso_date_only() {
         assert_eq!(parse_date("2026-03-30", None), Some(ymd(2026, 3, 30)));
     }

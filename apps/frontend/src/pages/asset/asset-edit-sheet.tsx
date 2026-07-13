@@ -6,7 +6,7 @@ import { useCustomProviders } from "@/hooks/use-custom-providers";
 import { useMarketDataProviders } from "@/hooks/use-market-data-providers";
 import { useTaxonomies } from "@/hooks/use-taxonomies";
 import type { Asset, Quote } from "@/lib/types";
-import { formatAmount } from "@/lib/utils";
+import { formatPrice } from "@wealthfolio/ui";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -996,7 +996,7 @@ export function AssetEditSheet({
                         <div className="grid grid-cols-3 gap-4 text-center">
                           <div>
                             <p className="text-xl font-semibold">
-                              {formatAmount(latestQuote.close, latestQuote.currency)}
+                              {formatPrice(latestQuote.close, latestQuote.currency)}
                             </p>
                             <p className="text-muted-foreground text-xs">
                               {t("asset:editSheet.latest_price")}

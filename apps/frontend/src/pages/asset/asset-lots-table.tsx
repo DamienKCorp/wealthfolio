@@ -15,7 +15,7 @@ import {
   GainAmount,
   GainPercent,
   PrivacyAmount,
-  formatAmount,
+  formatPrice,
   formatPercent,
 } from "@wealthfolio/ui";
 import { cn, formatDate, formatQuantity, normalizeCurrency } from "@/lib/utils";
@@ -330,7 +330,7 @@ function KpiStrip({
         />
         <span className="text-muted-foreground text-[11px]">
           {formatQuantity(totals.shares)} {t("asset:lots.shares_suffix")}
-          {marketPrice ? ` @ ${formatAmount(marketPrice, currency)}` : null}
+          {marketPrice ? ` @ ${formatPrice(marketPrice, currency)}` : null}
         </span>
       </KpiCell>
 
@@ -341,7 +341,7 @@ function KpiStrip({
           className={cn("text-foreground", bigAmountClass)}
         />
         <span className="text-muted-foreground text-[11px]">
-          {t("asset:lots.avg", { amount: formatAmount(totals.averageUnitCost, currency) })}
+          {t("asset:lots.avg", { amount: formatPrice(totals.averageUnitCost, currency) })}
         </span>
       </KpiCell>
 
