@@ -17,6 +17,14 @@ pub const BROKER_SYNC_START: &str = "broker:sync-start";
 pub const BROKER_SYNC_COMPLETE: &str = "broker:sync-complete";
 pub const BROKER_SYNC_ERROR: &str = "broker:sync-error";
 
+/// Payload published when a market data sync completes.
+#[derive(Debug, serde::Serialize)]
+pub struct MarketSyncResult {
+    pub failed_syncs: Vec<(String, String)>,
+    pub skipped_reasons: Vec<(String, String)>,
+    pub show_skipped_reasons: bool,
+}
+
 /// Serializable envelope that carries event names and optional payloads.
 #[derive(Clone, Debug)]
 pub struct ServerEvent {

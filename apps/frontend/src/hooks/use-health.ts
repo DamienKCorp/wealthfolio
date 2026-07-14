@@ -126,8 +126,15 @@ export function useExecuteHealthFix() {
         toast.success("Fix applied successfully");
       }
     },
-    onError: (error: Error) => {
-      toast.error("Fix failed", { description: error.message });
+    onError: (error: Error, action) => {
+      if (action.id === "sync_prices" || action.id === "retry_sync") {
+        toast.error("Market Data Sync Failed", {
+          id: "market-sync-error",
+          description: `${error.message}. Please try again later.`,
+        });
+      } else {
+        toast.error("Fix failed", { description: error.message });
+      }
     },
   });
 }

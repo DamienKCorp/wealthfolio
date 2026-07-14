@@ -3,6 +3,9 @@ use std::sync::Arc;
 use crate::{
     api::shared::{process_portfolio_job, PortfolioJobConfig},
     error::{ApiError, ApiResult},
+    events::{
+        MarketSyncResult, ServerEvent, MARKET_SYNC_COMPLETE, MARKET_SYNC_ERROR, MARKET_SYNC_START,
+    },
     main_lib::AppState,
 };
 use axum::{
@@ -11,6 +14,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use serde_json::json;
 use wealthfolio_core::{
     health::{FixAction, HealthConfig, HealthStatus},
     portfolio::{snapshot::SnapshotRecalcMode, valuation::ValuationRecalcMode},
@@ -152,14 +156,39 @@ async fn execute_health_fix(
             ));
         }
 
-        state
+        state.event_bus.publish(ServerEvent::new(MARKET_SYNC_START));
+
+        match state
             .quote_service
             .sync(
                 wealthfolio_core::quotes::SyncMode::Incremental,
                 Some(asset_ids),
             )
             .await
-            .map_err(|e| anyhow::anyhow!("Market data sync failed: {}", e))?;
+        {
+            Ok(result) => {
+                let skipped_reasons: Vec<(String, String)> = result
+                    .skipped_reasons
+                    .into_iter()
+                    .map(|(asset_id, reason)| (asset_id, reason.to_string()))
+                    .collect();
+                state.event_bus.publish(ServerEvent::with_payload(
+                    MARKET_SYNC_COMPLETE,
+                    json!(MarketSyncResult {
+                        failed_syncs: result.failures,
+                        skipped_reasons,
+                        show_skipped_reasons: true,
+                    }),
+                ));
+            }
+            Err(error) => {
+                let message = format!("Market data sync failed: {}", error);
+                state
+                    .event_bus
+                    .publish(ServerEvent::with_payload(MARKET_SYNC_ERROR, json!(message)));
+                return Err(anyhow::anyhow!(message).into());
+            }
+        }
 
         state.health_service.clear_cache().await;
         return Ok(());

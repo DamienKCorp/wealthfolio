@@ -306,7 +306,7 @@ async fn run_portfolio_job(
     config: crate::api::shared::PortfolioJobConfig,
 ) {
     use crate::events::{
-        ServerEvent, MARKET_SYNC_COMPLETE, MARKET_SYNC_ERROR, MARKET_SYNC_START,
+        MarketSyncResult, ServerEvent, MARKET_SYNC_COMPLETE, MARKET_SYNC_ERROR, MARKET_SYNC_START,
         PORTFOLIO_UPDATE_COMPLETE, PORTFOLIO_UPDATE_ERROR, PORTFOLIO_UPDATE_START,
     };
     use serde_json::json;
@@ -386,9 +386,10 @@ async fn run_portfolio_job(
                     .collect();
                 event_bus.publish(ServerEvent::with_payload(
                     MARKET_SYNC_COMPLETE,
-                    json!({
-                        "failed_syncs": result.failures,
-                        "skipped_reasons": skipped_reasons,
+                    json!(MarketSyncResult {
+                        failed_syncs: result.failures,
+                        skipped_reasons,
+                        show_skipped_reasons: false,
                     }),
                 ));
                 tracing::info!("Market data sync completed in {:?}", sync_start.elapsed());

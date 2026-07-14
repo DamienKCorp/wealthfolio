@@ -142,13 +142,6 @@ pub async fn execute_health_fix(
             asset_ids
         );
 
-        // Reset error counts so the sync won't skip these assets
-        let quote_service = state.quote_service();
-        quote_service
-            .reset_sync_errors(&asset_ids)
-            .await
-            .map_err(|e| format!("Failed to reset sync errors: {}", e))?;
-
         if let Err(e) = app_handle.emit(MARKET_SYNC_START, &()) {
             error!("Failed to emit market:sync-start event: {}", e);
         }
@@ -172,6 +165,7 @@ pub async fn execute_health_fix(
                 let result_payload = MarketSyncResult {
                     failed_syncs: result.failures,
                     skipped_reasons,
+                    show_skipped_reasons: true,
                 };
                 if let Err(e) = app_handle.emit(MARKET_SYNC_COMPLETE, &result_payload) {
                     error!("Failed to emit market:sync-complete event: {}", e);
