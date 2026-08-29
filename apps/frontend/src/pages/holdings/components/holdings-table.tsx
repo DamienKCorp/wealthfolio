@@ -345,7 +345,10 @@ const getColumns = (
                 </Badge>
               )}
               {isDiscontinued && !isCash && (
-                <Badge variant="outline" className="text-muted-foreground h-4 px-1 py-0 text-[10px]">
+                <Badge
+                  variant="outline"
+                  className="text-muted-foreground h-4 px-1 py-0 text-[10px]"
+                >
                   {t("holdings:discontinued")}
                 </Badge>
               )}

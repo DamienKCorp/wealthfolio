@@ -558,7 +558,10 @@ export function AssetEditSheet({
       instrumentType: asset?.instrumentType ?? "",
       quoteCcy: asset?.quoteCcy ?? "",
       instrumentExchangeMic: normalizeMic(asset?.instrumentExchangeMic),
-      quoteMode: (asset?.quoteMode === "MANUAL" || asset?.quoteMode === "DISCONTINUED") ? QuoteMode.MANUAL : QuoteMode.MARKET,
+      quoteMode:
+        asset?.quoteMode === "MANUAL" || asset?.quoteMode === "DISCONTINUED"
+          ? QuoteMode.MANUAL
+          : QuoteMode.MARKET,
       preferredProvider: parsePreferredProvider(
         asset?.providerConfig as Record<string, unknown> | null,
       ),

@@ -60,7 +60,7 @@ pub enum InstrumentType {
 pub enum QuoteMode {
     #[default]
     Market, // Priced via market data providers
-    Manual, // User-entered quotes only
+    Manual,       // User-entered quotes only
     Discontinued, // Asset no longer traded; skip sync silently, preserve history
 }
 
