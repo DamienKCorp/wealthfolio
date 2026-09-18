@@ -8,6 +8,8 @@ import {
 import { useAuth } from "@/context/auth-context";
 import { getPlatform } from "@/hooks/use-platform";
 import { CONNECT_ENABLED } from "@/lib/connect-config";
+import { QueryKeys } from "@/lib/query-keys";
+import { useQueryClient } from "@tanstack/react-query";
 import { createClient, Session, SupabaseClient, User } from "@supabase/supabase-js";
 import {
   createContext,
@@ -20,7 +22,7 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { authenticate as authenticateWithASWebAuth } from "tauri-plugin-web-auth-api";
+import { authenticate as authenticateWithNativeWebAuth } from "tauri-plugin-web-auth-api";
 import {
   clearSyncSession,
   getSyncSessionStatus,
@@ -206,6 +208,7 @@ const createSupabaseClient = () => {
 
 // Internal provider used when Connect is enabled
 function EnabledWealthfolioConnectProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const { t } = useTranslation();
   const { isAuthenticated } = useAuth();
   const [isInitializing, setIsInitializing] = useState(true);
@@ -303,13 +306,18 @@ function EnabledWealthfolioConnectProvider({ children }: { children: ReactNode }
   }, []);
 
   // The backend is the sole owner of persistent credentials and token rotation.
-  const storeTokens = useCallback(async (next: Session | null) => {
-    if (next?.refresh_token) {
-      await storeSyncSession(next.refresh_token);
-    } else {
-      await clearSyncSession();
-    }
-  }, []);
+  const storeTokens = useCallback(
+    async (next: Session | null) => {
+      if (next?.refresh_token) {
+        await storeSyncSession(next.refresh_token);
+        // Reconnect clears the backend's read-only restore flag.
+        void queryClient.invalidateQueries({ queryKey: [QueryKeys.SETTINGS] });
+      } else {
+        await clearSyncSession();
+      }
+    },
+    [queryClient],
+  );
 
   // Handle auth callback from URL (deep link or web redirect)
   const handleAuthCallback = useCallback(
@@ -582,25 +590,22 @@ function EnabledWealthfolioConnectProvider({ children }: { children: ReactNode }
         const isTauri = isDesktop;
         const platform = isTauri ? await getPlatform() : null;
         const isMobile = platform?.is_mobile ?? false;
-        const isIOS = platform?.os === "ios";
 
-        // iOS mobile: Use ASWebAuthenticationSession with deep link callback
-        // This is required because Google blocks OAuth from embedded webviews (WKWebView)
-        // ASWebAuthenticationSession opens a secure Safari sheet that Google accepts
-        // Note: This is needed in both dev and prod modes on iOS
-        const useASWebAuth = isTauri && isMobile && isIOS;
+        // Mobile: use native web auth with a deep link callback because Google blocks OAuth
+        // from embedded webviews.
+        const useNativeMobileWebAuth = isTauri && isMobile;
 
         // Determine redirect URL based on platform
-        // iOS ASWebAuth always needs deep link URL (works in dev and prod)
+        // Native mobile web auth always needs a deep link URL (works in dev and prod)
         // Desktop prod uses hosted callback → deep link (can't use in dev - URL scheme not registered)
         // Dev mode uses webview redirect (simpler, no deep link registration needed)
-        const redirectUrl = useASWebAuth
-          ? DESKTOP_DEEP_LINK_URL // iOS: direct custom scheme, captured by ASWebAuth
+        const redirectUrl = useNativeMobileWebAuth
+          ? DESKTOP_DEEP_LINK_URL // Mobile: direct custom scheme, captured by native web auth
           : isTauri && import.meta.env.PROD
-            ? HOSTED_OAUTH_CALLBACK_URL // Desktop & Android: bounce page → wealthfolio://
+            ? HOSTED_OAUTH_CALLBACK_URL // Desktop: bounce page → wealthfolio://
             : getWebRedirectUrl(); // Web or dev mode
 
-        const useSystemBrowser = isTauri && import.meta.env.PROD && !useASWebAuth;
+        const useSystemBrowser = isTauri && import.meta.env.PROD && !useNativeMobileWebAuth;
         const queryParams =
           provider === "google"
             ? {
@@ -612,7 +617,7 @@ function EnabledWealthfolioConnectProvider({ children }: { children: ReactNode }
         const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
           provider,
           options: {
-            skipBrowserRedirect: useSystemBrowser || useASWebAuth,
+            skipBrowserRedirect: useSystemBrowser || useNativeMobileWebAuth,
             redirectTo: redirectUrl,
             queryParams,
           },
@@ -622,11 +627,10 @@ function EnabledWealthfolioConnectProvider({ children }: { children: ReactNode }
           throw oauthError;
         }
 
-        // iOS mobile: Use ASWebAuthenticationSession plugin
-        // This opens a secure Safari sheet that Google accepts for OAuth
-        if (useASWebAuth && data.url) {
+        // Mobile: use the native web-auth plugin instead of the embedded webview.
+        if (useNativeMobileWebAuth && data.url) {
           try {
-            const result = await authenticateWithASWebAuth({
+            const result = await authenticateWithNativeWebAuth({
               url: data.url,
               callbackScheme: "wealthfolio",
             });
@@ -635,13 +639,13 @@ function EnabledWealthfolioConnectProvider({ children }: { children: ReactNode }
             if (result?.callbackUrl) {
               await handleAuthCallback(result.callbackUrl);
             } else {
-              logger.error("No callbackUrl in ASWebAuth result");
+              logger.error("No callbackUrl in native web auth result");
             }
           } catch (authErr) {
             // User cancelled or auth failed
             const message =
               authErr instanceof Error ? authErr.message : "Authentication was cancelled";
-            logger.error(`ASWebAuth error: ${message}`);
+            logger.error(`Native web auth error: ${message}`);
             // Don't throw if user just cancelled
             if (!message.toLowerCase().includes("cancel")) {
               throw authErr;
