@@ -66,7 +66,7 @@ describe("loan schedule replacement", () => {
       { date: "2026-03-01", close: 400 },
       { date: "2026-04-01", close: 0 },
     ]);
-    expect(schedule.every(({ notes }) => notes === "loan_schedule")).toBe(true);
+    expect(schedule.every(({ notes }) => notes?.startsWith("loan_schedule"))).toBe(true);
   });
 
   it("separates the zero payoff quote from batch-importable values", () => {

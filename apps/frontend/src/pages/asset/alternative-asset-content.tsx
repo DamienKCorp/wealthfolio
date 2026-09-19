@@ -147,9 +147,15 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     endDate && loanOriginationDate
       ? differenceInCalendarMonths(endDate, parseISO(loanOriginationDate))
       : remainingMonths;
-  const monthlyPayment = metadata.current_monthly_payment
+  const storedMonthlyPayment = metadata.current_monthly_payment
     ? parseFloat(metadata.current_monthly_payment as string)
-    : calculateMonthlyPayment(loanOriginalAmount, interestRate, totalMonths);
+    : null;
+  const monthlyPayment =
+    storedMonthlyPayment !== null &&
+    Number.isFinite(storedMonthlyPayment) &&
+    storedMonthlyPayment >= 0
+      ? storedMonthlyPayment
+      : calculateMonthlyPayment(loanOriginalAmount, interestRate, totalMonths);
 
   const persistLoanSchedule = async (schedule: ReturnType<typeof buildLoanSchedule>) => {
     const { importableQuotes, payoffQuote } = splitLoanScheduleForPersistence(schedule);
@@ -171,6 +177,23 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         notes: "scheduled_payoff",
       });
     }
+  };
+
+  const replaceGeneratedLoanSchedule = async (
+    schedule: ReturnType<typeof buildLoanSchedule>,
+    effectiveDate: Date,
+  ) => {
+    const { importableQuotes } = splitLoanScheduleForPersistence(schedule);
+    const obsoleteQuoteIds = getObsoleteFutureQuoteIds(
+      quoteHistory,
+      effectiveDate,
+      importableQuotes,
+    );
+
+    // Persist the replacement first. Old generated quotes are removed only
+    // after the new schedule has been accepted by the backend.
+    await persistLoanSchedule(schedule);
+    await Promise.all(obsoleteQuoteIds.map((quoteId) => deleteQuoteMutation.mutateAsync(quoteId)));
   };
 
   const handleEarlyRepayment = async (
@@ -257,16 +280,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
           firstPaymentDate: addMonths(originationDate, startIndex),
           monthlyPayment: mode === "reduce_duration" ? P : undefined,
         });
-        if (quotes.length > 0) {
-          await persistLoanSchedule(quotes);
-        }
-        // Use importable quotes only (close > 0) so the payoff date is not in replacementDays.
-        // This ensures the old scheduled_payoff at that date gets deleted and no duplicate is created.
-        const { importableQuotes } = splitLoanScheduleForPersistence(quotes);
-        const obsoleteQuoteIds = getObsoleteFutureQuoteIds(quoteHistory, date, importableQuotes);
-        await Promise.all(
-          obsoleteQuoteIds.map((quoteId) => deleteQuoteMutation.mutateAsync(quoteId)),
-        );
+        if (quotes.length > 0) await replaceGeneratedLoanSchedule(quotes, date);
       }
 
       await updateMetadataMutation.mutateAsync({ assetId, metadata: metaUpdates });
@@ -343,12 +357,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       firstPaymentDate: addMonths(originationDate, startIndex),
     });
 
-    if (quotes.length > 0) {
-      await persistLoanSchedule(quotes);
-    }
-    const { importableQuotes } = splitLoanScheduleForPersistence(quotes);
-    const obsoleteQuoteIds = getObsoleteFutureQuoteIds(quoteHistory, today, importableQuotes);
-    await Promise.all(obsoleteQuoteIds.map((quoteId) => deleteQuoteMutation.mutateAsync(quoteId)));
+    if (quotes.length > 0) await replaceGeneratedLoanSchedule(quotes, today);
 
     // Always persist the new effective payment; also update rate if it changed
     const existingMetadata = Object.fromEntries(
@@ -488,15 +497,35 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     )
       return null;
     const now = new Date();
+    // The origination-date quote is the first paid instalment, so include it
+    // in the number of payments represented by the current balance.
     const paymentsMade = Math.min(
-      Math.max(0, differenceInCalendarMonths(now, parseISO(loanOriginationDate))),
+      Math.max(0, differenceInCalendarMonths(now, parseISO(loanOriginationDate)) + 1),
       totalMonths,
     );
+    const scheduledQuotes = [...quoteHistory]
+      .filter(
+        (q) =>
+          new Date(q.timestamp) <= now &&
+          (q.notes?.startsWith("loan_schedule") || q.notes?.startsWith("early_repayment:")),
+      )
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    if (scheduledQuotes.length > 0) {
+      let previousBalance = loanOriginalAmount;
+      return scheduledQuotes.reduce((sum, quote) => {
+        const isEarlyRepayment = quote.notes?.startsWith("early_repayment:");
+        const rateText = quote.notes?.match(/(?:^|\|)rate=([\d.]+)/)?.[1];
+        const rate = rateText ? Number.parseFloat(rateText) : interestRate;
+        const interest = isEarlyRepayment ? 0 : previousBalance * (rate / 100 / 12);
+        previousBalance = Math.abs(quote.close);
+        return sum + Math.max(0, interest);
+      }, 0);
+    }
+
+    // Legacy quotes do not contain historical rate/payment metadata.
     const amountPaid = loanOriginalAmount - currentBalance;
-    const earlyRepayments = quoteHistory
-      .filter((q) => q.notes?.startsWith("early_repayment:") && new Date(q.timestamp) <= now)
-      .reduce((sum, q) => sum + (parseFloat(q.notes!.split(":")[1] ?? "0") || 0), 0);
-    return Math.max(0, paymentsMade * monthlyPayment - amountPaid + earlyRepayments);
+    return Math.max(0, paymentsMade * monthlyPayment - amountPaid);
   }, [
     isLiability,
     loanOriginationDate,

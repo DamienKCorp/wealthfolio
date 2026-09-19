@@ -132,7 +132,7 @@ export function buildLoanSchedule({
       date: format(paymentDate, "yyyy-MM-dd"),
       close: index === paymentCount - 1 ? 0 : Math.round(balance * 100) / 100,
       currency,
-      notes: "loan_schedule",
+      notes: `loan_schedule|rate=${annualRate}|payment=${payment}`,
       validationStatus: "valid" as const,
     };
   });
@@ -163,7 +163,8 @@ export function getObsoleteFutureQuoteIds(
   return existingQuotes
     .filter((quote) => {
       const quoteDay = quote.timestamp.slice(0, 10);
-      const isGenerated = quote.notes === "loan_schedule" || quote.notes === "scheduled_payoff";
+      const isGenerated =
+        quote.notes?.startsWith("loan_schedule") || quote.notes === "scheduled_payoff";
       return isGenerated && quoteDay > effectiveDay && !replacementDays.has(quoteDay);
     })
     .map((quote) => quote.id);

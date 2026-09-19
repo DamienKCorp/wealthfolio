@@ -197,16 +197,30 @@ export function ValueHistoryDataGrid({
     const monthlyRate = interestRate / 100 / 12;
     const sortedAsc = [...localEntries].sort((a, b) => a.date.getTime() - b.date.getTime());
     const result = new Map<string, { capital: number; interest: number }>();
-    // When loanOriginalAmount is provided, the first entry is the first payment (origination date);
-    // use the original amount as the preceding balance so capital/interest are computed for it.
+    // The origination entry represents the first paid instalment. Use the
+    // original amount as its preceding balance so both principal and interest
+    // are shown for that first payment.
     const hasOrigin = loanOriginalAmount !== undefined && loanOriginalAmount > 0;
     const startIndex = hasOrigin ? 0 : 1;
     for (let i = startIndex; i < sortedAsc.length; i++) {
       const prevValue = i === 0 ? loanOriginalAmount! : sortedAsc[i - 1].value;
       const curr = sortedAsc[i];
-      const capital = roundToDecimals(Math.max(0, prevValue - curr.value));
       const isEarlyRepayment = curr.notes?.startsWith("early_repayment:");
-      const interest = isEarlyRepayment ? 0 : roundToDecimals(Math.max(0, prevValue * monthlyRate));
+      const scheduleRate = /(?:^|\|)rate=([\d.]+)/.exec(curr.notes ?? "")?.[1];
+      const effectiveMonthlyRate = scheduleRate
+        ? Number.parseFloat(scheduleRate) / 100 / 12
+        : monthlyRate;
+      const repaymentAmount = isEarlyRepayment
+        ? Number.parseFloat(curr.notes?.split(":")[1] ?? "")
+        : Number.NaN;
+      const capital = roundToDecimals(
+        isEarlyRepayment && Number.isFinite(repaymentAmount)
+          ? repaymentAmount
+          : Math.max(0, prevValue - curr.value),
+      );
+      const interest = isEarlyRepayment
+        ? 0
+        : roundToDecimals(Math.max(0, prevValue * effectiveMonthlyRate));
       result.set(curr.id, { capital, interest });
     }
     return result;
