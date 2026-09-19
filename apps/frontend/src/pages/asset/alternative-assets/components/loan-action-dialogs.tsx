@@ -69,10 +69,13 @@ export function EarlyRepaymentDialog({
     originationDate && endDate ? getRemainingScheduleWindow(originationDate, date, endDate) : null;
   const selectedRemainingMonths = selectedWindow?.paymentCount ?? remainingMonths;
 
+  const startIndex = originationDate ? differenceInCalendarMonths(date, originationDate) + 1 : 0;
   let newEndDate: Date | null = null;
-  if (mode === "reduce_duration" && monthlyPayment !== null) {
+  if (mode === "reduce_duration" && monthlyPayment !== null && originationDate) {
     const paymentCount = calculateRemainingPaymentCount(bNew, interestRate, monthlyPayment);
-    if (paymentCount !== null && paymentCount > 0) newEndDate = addMonths(date, paymentCount);
+    if (paymentCount !== null && paymentCount > 0) {
+      newEndDate = addMonths(originationDate, startIndex + paymentCount - 1);
+    }
   }
 
   const newMonthlyPayment =

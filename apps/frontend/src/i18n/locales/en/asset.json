@@ -487,6 +487,7 @@
     "original_amount": "Original Amount",
     "interest_rate": "Interest Rate",
     "monthly_payment": "Monthly Payment",
+    "total_interest_paid": "Total Interest Paid",
     "per_month": "/ month",
     "origination_date": "Origination Date",
     "end_date": "End Date",
@@ -709,6 +710,8 @@
   "valueHistory": {
     "date": "Date",
     "balance": "Balance",
+    "capital": "Principal",
+    "interest": "Interest",
     "value": "Value",
     "notes": "Notes",
     "edit_entry_aria": "Edit {{date}}, {{value}}",

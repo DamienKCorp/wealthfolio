@@ -127,14 +127,21 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         (metadata.origination_date ?? metadata.purchase_date) as string | undefined,
         (metadata.original_amount ?? metadata.purchase_price) as string | undefined,
         holding.marketValue,
+        interestRate,
+        metadata.current_monthly_payment
+          ? parseFloat(metadata.current_monthly_payment as string)
+          : null,
       );
   const remainingMonths = endDate ? Math.max(1, differenceInMonths(endDate, new Date())) : 0;
   // Monthly payment uses original amount + total term (French amortization constant installment)
   const loanOriginationDate = (metadata.origination_date ?? metadata.purchase_date) as
     | string
     | undefined;
-  const loanOriginalAmount = parseFloat(
-    ((metadata.original_amount ?? metadata.purchase_price) as string | undefined) ?? "0",
+  const loanOriginalAmount = Math.max(
+    0,
+    parseFloat(
+      ((metadata.original_amount ?? metadata.purchase_price) as string | undefined) ?? "0",
+    ) || 0,
   );
   const totalMonths =
     endDate && loanOriginationDate
@@ -253,7 +260,10 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         if (quotes.length > 0) {
           await persistLoanSchedule(quotes);
         }
-        const obsoleteQuoteIds = getObsoleteFutureQuoteIds(quoteHistory, date, quotes);
+        // Use importable quotes only (close > 0) so the payoff date is not in replacementDays.
+        // This ensures the old scheduled_payoff at that date gets deleted and no duplicate is created.
+        const { importableQuotes } = splitLoanScheduleForPersistence(quotes);
+        const obsoleteQuoteIds = getObsoleteFutureQuoteIds(quoteHistory, date, importableQuotes);
         await Promise.all(
           obsoleteQuoteIds.map((quoteId) => deleteQuoteMutation.mutateAsync(quoteId)),
         );
@@ -336,7 +346,8 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     if (quotes.length > 0) {
       await persistLoanSchedule(quotes);
     }
-    const obsoleteQuoteIds = getObsoleteFutureQuoteIds(quoteHistory, today, quotes);
+    const { importableQuotes } = splitLoanScheduleForPersistence(quotes);
+    const obsoleteQuoteIds = getObsoleteFutureQuoteIds(quoteHistory, today, importableQuotes);
     await Promise.all(obsoleteQuoteIds.map((quoteId) => deleteQuoteMutation.mutateAsync(quoteId)));
 
     // Always persist the new effective payment; also update rate if it changed
@@ -464,6 +475,38 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     return marketValue - liabilityTotal;
   }, [marketValue, linkedLiabilities]);
 
+  // Total interest paid: base formula corrected for early lump-sum repayments.
+  // Early repayments are pure capital (zero interest) but inflate amountPaid;
+  // we add them back so they don't reduce the interest count.
+  const totalInterestPaid = useMemo(() => {
+    if (
+      !isLiability ||
+      !loanOriginationDate ||
+      monthlyPayment === null ||
+      !Number.isFinite(monthlyPayment) ||
+      totalMonths <= 0
+    )
+      return null;
+    const now = new Date();
+    const paymentsMade = Math.min(
+      Math.max(0, differenceInCalendarMonths(now, parseISO(loanOriginationDate))),
+      totalMonths,
+    );
+    const amountPaid = loanOriginalAmount - currentBalance;
+    const earlyRepayments = quoteHistory
+      .filter((q) => q.notes?.startsWith("early_repayment:") && new Date(q.timestamp) <= now)
+      .reduce((sum, q) => sum + (parseFloat(q.notes!.split(":")[1] ?? "0") || 0), 0);
+    return Math.max(0, paymentsMade * monthlyPayment - amountPaid + earlyRepayments);
+  }, [
+    isLiability,
+    loanOriginationDate,
+    monthlyPayment,
+    totalMonths,
+    loanOriginalAmount,
+    currentBalance,
+    quoteHistory,
+  ]);
+
   if (activeTab === "overview") {
     return (
       <div className="space-y-4">
@@ -526,16 +569,9 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
                   {isLiability ? (
                     <LiabilityHistoryChart
                       data={filteredChartData}
-                      endDate={
-                        (holding.metadata?.end_date as string | undefined) ??
-                        estimateEndDate(
-                          (holding.metadata?.origination_date ??
-                            holding.metadata?.purchase_date) as string | undefined,
-                          (holding.metadata?.original_amount ??
-                            holding.metadata?.purchase_price) as string | undefined,
-                          holding.marketValue,
-                        )
-                      }
+                      endDate={endDate}
+                      annualRate={interestRate}
+                      monthlyPayment={monthlyPayment}
                     />
                   ) : (
                     <HistoryChart data={filteredChartData} />
@@ -566,6 +602,8 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
             hasLinkedLiabilities={linkedLiabilities.length > 0}
             linkedLiabilities={isLinkableAsset ? linkedLiabilities : []}
             isLiability={isLiability}
+            totalInterestPaid={isLiability ? totalInterestPaid : null}
+            monthlyPayment={isLiability ? monthlyPayment : null}
             className="col-span-1"
           />
         </div>
@@ -632,6 +670,8 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         assetId={assetId}
         currency={holding.currency}
         isLiability={isLiability}
+        interestRate={isLiability ? interestRate : undefined}
+        loanOriginalAmount={isLiability ? loanOriginalAmount : undefined}
         onSaveQuote={(quote: Quote) => saveQuoteMutation.mutateAsync(quote)}
         onDeleteQuote={(id: string) => deleteQuoteMutation.mutateAsync(id)}
         onPersistComplete={invalidateQuoteQueries}
@@ -740,6 +780,8 @@ interface AlternativeAssetDetailCardProps {
   linkedLiabilities: AlternativeAssetHolding[];
   className?: string;
   isLiability?: boolean;
+  totalInterestPaid?: number | null;
+  monthlyPayment?: number | null;
 }
 
 /**
@@ -801,6 +843,8 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
   hasLinkedLiabilities,
   linkedLiabilities,
   isLiability,
+  totalInterestPaid = null,
+  monthlyPayment = null,
   className,
 }) => {
   const numberFormatting = useNumberFormatting();
@@ -812,7 +856,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
   const metadata = useMemo(() => holding.metadata || {}, [holding.metadata]);
   const kind = holding.kind.toLowerCase();
 
-  // Calculate liability progress
+  // Calculate liability progress (amountPaid + percentPaid for header display)
   const liabilityProgress = useMemo(() => {
     if (!isLiability) return null;
 
@@ -830,42 +874,8 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
     const amountPaid = originalAmount - currentBalance;
     const percentPaid = amountPaid / originalAmount;
 
-    // Monthly payment: French amortization constant installment from original amount + total term
-    const originationDateStr = (metadata.origination_date ?? metadata.purchase_date) as
-      | string
-      | undefined;
-    const endDate = (metadata.end_date as string | undefined)
-      ? parseISO(metadata.end_date as string)
-      : estimateEndDate(originationDateStr, origAmountStr, holding.marketValue);
-    const totalMonths =
-      endDate && originationDateStr
-        ? differenceInCalendarMonths(endDate, parseISO(originationDateStr))
-        : endDate
-          ? Math.max(1, differenceInMonths(endDate, new Date()))
-          : null;
-    let monthlyPayment: number | null = null;
-    const storedMonthlyPayment = metadata.current_monthly_payment
-      ? parseFloat(metadata.current_monthly_payment as string)
-      : null;
-    if (storedMonthlyPayment !== null && Number.isFinite(storedMonthlyPayment)) {
-      monthlyPayment = storedMonthlyPayment;
-    } else if (totalMonths && totalMonths > 0) {
-      const annualRate = metadata.interest_rate ? parseFloat(metadata.interest_rate as string) : 0;
-      monthlyPayment = calculateMonthlyPayment(originalAmount, annualRate, totalMonths);
-    }
-
-    return { amountPaid, percentPaid, originalAmount, currentBalance, monthlyPayment };
-  }, [
-    isLiability,
-    holding.marketValue,
-    metadata.original_amount,
-    metadata.purchase_price,
-    metadata.current_monthly_payment,
-    metadata.end_date,
-    metadata.interest_rate,
-    metadata.origination_date,
-    metadata.purchase_date,
-  ]);
+    return { amountPaid, percentPaid, originalAmount, currentBalance };
+  }, [isLiability, holding.marketValue, metadata.original_amount, metadata.purchase_price]);
 
   // Build detail rows based on asset type
   const detailRows = useMemo(
@@ -877,7 +887,8 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
         isBalanceHidden,
         t,
         dateFormatting,
-        liabilityProgress?.monthlyPayment ?? null,
+        monthlyPayment,
+        totalInterestPaid,
       ),
     [
       kind,
@@ -886,7 +897,8 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
       isBalanceHidden,
       t,
       dateFormatting,
-      liabilityProgress?.monthlyPayment,
+      monthlyPayment,
+      totalInterestPaid,
     ],
   );
 
@@ -1056,6 +1068,7 @@ function getDetailRows(
   t: TFunction,
   formatting: Pick<FormattingApi, "formatCalendarDate">,
   monthlyPayment: number | null = null,
+  totalInterestPaid: number | null = null,
 ): DetailRow[] {
   const rows: DetailRow[] = [];
 
@@ -1172,6 +1185,20 @@ function getDetailRows(
         });
       }
 
+      // Total interest paid to date
+      if (totalInterestPaid !== null) {
+        rows.push({
+          label: t("asset:altContent.total_interest_paid"),
+          value: (
+            <AmountDisplay
+              value={totalInterestPaid}
+              currency={holding.currency}
+              isHidden={isBalanceHidden}
+            />
+          ),
+        });
+      }
+
       // Note: Linked asset is shown in its own section with LinkedAssetSection
 
       // Origination date (check both new and legacy field names)
@@ -1190,8 +1217,20 @@ function getDetailRows(
       const originalAmountForEst = (metadata.original_amount ?? metadata.purchase_price) as
         | string
         | undefined;
+      const annualRateForEst = metadata.interest_rate
+        ? parseFloat(metadata.interest_rate as string)
+        : 0;
+      const storedPaymentForEst = metadata.current_monthly_payment
+        ? parseFloat(metadata.current_monthly_payment as string)
+        : null;
       const estimatedEnd = !endDateStr
-        ? estimateEndDate(originationDate, originalAmountForEst, holding.marketValue)
+        ? estimateEndDate(
+            originationDate,
+            originalAmountForEst,
+            holding.marketValue,
+            annualRateForEst,
+            storedPaymentForEst,
+          )
         : null;
 
       if (endDateStr) {
@@ -1420,6 +1459,8 @@ export function useAlternativeAssetActions({
 function buildLiabilityChartData(
   historicalData: { timestamp: string; totalValue: number; currency: string }[],
   endDate: Date | string | null,
+  annualRate?: number,
+  monthlyPaymentArg?: number | null,
 ): {
   data: { timestamp: string; totalValue: number }[];
   splitPercent: number;
@@ -1457,11 +1498,25 @@ function buildLiabilityChartData(
   if (monthsLeft === 0) return { data: pastPoints, splitPercent: 100, todayTimestamp };
 
   const projected: { timestamp: string; totalValue: number }[] = [];
-  for (let i = 1; i <= monthsLeft; i++) {
-    projected.push({
-      timestamp: addMonths(now, i).toISOString(),
-      totalValue: Math.max(0, currentBalance * (1 - i / monthsLeft)),
-    });
+  if (annualRate !== undefined && monthlyPaymentArg && monthlyPaymentArg > 0) {
+    const monthlyRate = annualRate / 100 / 12;
+    let balance = currentBalance;
+    for (let i = 1; i <= monthsLeft; i++) {
+      const interest = balance * monthlyRate;
+      balance = Math.max(0, balance - (monthlyPaymentArg - interest));
+      projected.push({
+        timestamp: addMonths(now, i).toISOString(),
+        totalValue: Math.round(balance * 100) / 100,
+      });
+      if (balance === 0) break;
+    }
+  } else {
+    for (let i = 1; i <= monthsLeft; i++) {
+      projected.push({
+        timestamp: addMonths(now, i).toISOString(),
+        totalValue: Math.max(0, currentBalance * (1 - i / monthsLeft)),
+      });
+    }
   }
 
   const allPoints = [...pastPoints, ...projected];
@@ -1472,15 +1527,22 @@ function buildLiabilityChartData(
 function LiabilityHistoryChart({
   data,
   endDate,
+  annualRate,
+  monthlyPayment,
 }: {
   data: { timestamp: string; totalValue: number; currency: string }[];
   endDate: Date | string | null;
+  annualRate?: number;
+  monthlyPayment?: number | null;
 }) {
   const {
     data: chartData,
     splitPercent,
     todayTimestamp,
-  } = useMemo(() => buildLiabilityChartData(data, endDate), [data, endDate]);
+  } = useMemo(
+    () => buildLiabilityChartData(data, endDate, annualRate, monthlyPayment),
+    [data, endDate, annualRate, monthlyPayment],
+  );
 
   const split = `${splitPercent.toFixed(2)}%`;
 
@@ -1530,6 +1592,8 @@ function estimateEndDate(
   originationDateStr: string | undefined,
   originalAmountStr: string | undefined,
   currentMarketValue: string,
+  annualRate?: number,
+  storedMonthlyPayment?: number | null,
 ): Date | null {
   if (!originationDateStr || !originalAmountStr) return null;
 
@@ -1538,6 +1602,20 @@ function estimateEndDate(
   const currentBalance = Math.abs(parseFloat(currentMarketValue));
 
   if (!originalAmount || originalAmount <= 0 || currentBalance >= originalAmount) return null;
+
+  if (
+    annualRate !== undefined &&
+    annualRate >= 0 &&
+    storedMonthlyPayment &&
+    storedMonthlyPayment > 0
+  ) {
+    const remainingCount = calculateRemainingPaymentCount(
+      currentBalance,
+      annualRate,
+      storedMonthlyPayment,
+    );
+    if (remainingCount !== null && remainingCount > 0) return addMonths(new Date(), remainingCount);
+  }
 
   const amountPaid = originalAmount - currentBalance;
   const percentPaid = amountPaid / originalAmount;

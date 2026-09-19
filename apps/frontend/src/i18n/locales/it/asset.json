@@ -545,6 +545,7 @@
       "kg": "Chilogrammo"
     },
     "monthly_payment": "Rata mensile",
+    "total_interest_paid": "Totale interessi pagati",
     "per_month": "/ mese",
     "end_date": "Data di scadenza",
     "end_date_estimated": "Scad. stimata"
@@ -713,6 +714,8 @@
   "valueHistory": {
     "date": "Data",
     "balance": "Saldo",
+    "capital": "Capitale",
+    "interest": "Interessi",
     "value": "Valore",
     "notes": "Note",
     "edit_entry_aria": "Modifica la voce del {{date}}, {{value}}",

@@ -545,6 +545,7 @@
       "kg": "Kilogramme"
     },
     "monthly_payment": "Mensualité",
+    "total_interest_paid": "Total des intérêts payés",
     "per_month": "/ mois",
     "end_date": "Date de fin",
     "end_date_estimated": "Fin estimée"
@@ -713,6 +714,8 @@
   "valueHistory": {
     "date": "Date",
     "balance": "Solde",
+    "capital": "Capital",
+    "interest": "Intérêts",
     "value": "Valeur",
     "notes": "Notes",
     "edit_entry_aria": "Modifier l’entrée du {{date}}, {{value}}",

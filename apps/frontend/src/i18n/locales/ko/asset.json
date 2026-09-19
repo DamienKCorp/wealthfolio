@@ -541,6 +541,7 @@
       "kg": "킬로그램"
     },
     "monthly_payment": "월 납입금",
+    "total_interest_paid": "누적 이자 납부액",
     "per_month": "/ 월",
     "end_date": "종료일",
     "end_date_estimated": "예상 종료일"
@@ -709,6 +710,8 @@
   "valueHistory": {
     "date": "날짜",
     "balance": "잔액",
+    "capital": "원금",
+    "interest": "이자",
     "value": "가치",
     "notes": "메모",
     "edit_entry_aria": "{{date}}, {{value}} 기록 편집",

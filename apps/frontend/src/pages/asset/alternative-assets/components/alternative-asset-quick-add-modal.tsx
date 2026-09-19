@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { addMonths, addYears } from "date-fns";
+import { addMonths } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -297,14 +297,15 @@ export function AlternativeAssetQuickAddModal({
       if (formData.purchaseDate) metadata.origination_date = formatDateToISO(formData.purchaseDate);
       if (formData.interestRate) metadata.interest_rate = formData.interestRate;
       if (formData.loanTerm && formData.purchaseDate) {
-        const computedEndDate = addYears(formData.purchaseDate, parseFloat(formData.loanTerm));
+        const termMonths = Math.round(parseFloat(formData.loanTerm) * 12);
+        const computedEndDate = addMonths(formData.purchaseDate, termMonths);
         metadata.end_date = formatDateToISO(computedEndDate);
         remainingSchedule = getRemainingScheduleWindow(
           formData.purchaseDate,
           formData.valueDate,
           computedEndDate,
         );
-        totalPaymentCount = parseFloat(formData.loanTerm) * 12;
+        totalPaymentCount = termMonths;
         completedPaymentCount = remainingSchedule
           ? totalPaymentCount - remainingSchedule.paymentCount
           : totalPaymentCount;

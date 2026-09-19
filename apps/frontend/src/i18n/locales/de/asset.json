@@ -541,6 +541,7 @@
       "kg": "Kilogramm"
     },
     "monthly_payment": "Monatliche Rate",
+    "total_interest_paid": "Gesamte Zinsen gezahlt",
     "per_month": "/ Monat",
     "end_date": "Enddatum",
     "end_date_estimated": "Gesch. Enddatum"
@@ -709,6 +710,8 @@
   "valueHistory": {
     "date": "Datum",
     "balance": "Saldo",
+    "capital": "Tilgung",
+    "interest": "Zinsen",
     "value": "Wert",
     "notes": "Notizen",
     "edit_entry_aria": "Eintrag vom {{date}} bearbeiten, {{value}}",

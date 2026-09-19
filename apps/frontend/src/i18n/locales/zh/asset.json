@@ -541,6 +541,7 @@
       "kg": "千克"
     },
     "monthly_payment": "月还款额",
+    "total_interest_paid": "已付利息总额",
     "per_month": "/ 月",
     "end_date": "结束日期",
     "end_date_estimated": "预计结束日期"
@@ -709,6 +710,8 @@
   "valueHistory": {
     "date": "日期",
     "balance": "余额",
+    "capital": "本金",
+    "interest": "利息",
     "value": "价值",
     "notes": "备注",
     "edit_entry_aria": "编辑 {{date}}，{{value}}",

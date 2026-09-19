@@ -545,6 +545,7 @@
       "kg": "Quilograma"
     },
     "monthly_payment": "Prestação mensal",
+    "total_interest_paid": "Total de juros pagos",
     "per_month": "/ mês",
     "end_date": "Data de vencimento",
     "end_date_estimated": "Venc. estimado"
@@ -713,6 +714,8 @@
   "valueHistory": {
     "date": "Data",
     "balance": "Saldo",
+    "capital": "Capital",
+    "interest": "Juros",
     "value": "Valor",
     "notes": "Notas",
     "edit_entry_aria": "Editar a entrada de {{date}}, {{value}}",

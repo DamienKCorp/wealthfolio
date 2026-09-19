@@ -541,6 +541,7 @@
       "kg": "キログラム"
     },
     "monthly_payment": "月々の支払い",
+    "total_interest_paid": "支払済み利息合計",
     "per_month": "/ 月",
     "end_date": "終了日",
     "end_date_estimated": "推定終了日"
@@ -709,6 +710,8 @@
   "valueHistory": {
     "date": "日付",
     "balance": "残高",
+    "capital": "元金",
+    "interest": "利息",
     "value": "評価額",
     "notes": "メモ",
     "edit_entry_aria": "{{date}}、{{value}}の履歴を編集",
