@@ -1435,7 +1435,8 @@ export const AssetProfilePage = () => {
                             label: t("asset:profile.edit"),
                             onClick: () => setEditSheetOpen(true),
                           },
-                          ...(!isAltAsset
+                          ...(!isAltAsset &&
+                          (isDiscontinued || assetProfile?.quoteMode === "MARKET")
                             ? [
                                 {
                                   icon: isDiscontinued ? Icons.Refresh : Icons.XCircle,

@@ -50,6 +50,10 @@ CREATE TABLE assets_new (
     CHECK (provider_config IS NULL OR json_valid(provider_config))
 );
 
+CREATE UNIQUE INDEX idx_assets_instrument_key
+ON assets_new(instrument_key)
+WHERE instrument_key IS NOT NULL;
+
 INSERT INTO assets_new (
     id, kind, name, display_code, notes, metadata,
     is_active, quote_mode, quote_ccy,

@@ -246,7 +246,7 @@ export function AssetsTable({
           const snapshot = latestQuotes[asset.id];
           const quote = snapshot?.quote;
           const stale = isStaleQuote(snapshot, asset);
-          const noQuoteReason = getNoQuoteReasonText(snapshot, asset);
+          const noQuoteReason = getNoQuoteReasonText(snapshot, asset, t);
 
           const isDiscontinued = asset.quoteMode === "DISCONTINUED";
 

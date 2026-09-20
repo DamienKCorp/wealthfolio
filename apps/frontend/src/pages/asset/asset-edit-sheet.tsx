@@ -620,7 +620,10 @@ export function AssetEditSheet({
         instrumentType: asset.instrumentType ?? "",
         quoteCcy: asset.quoteCcy ?? "",
         instrumentExchangeMic: normalizeMic(asset.instrumentExchangeMic),
-        quoteMode: asset.quoteMode === "MANUAL" ? QuoteMode.MANUAL : QuoteMode.MARKET,
+        quoteMode:
+          asset.quoteMode === "MANUAL" || asset.quoteMode === "DISCONTINUED"
+            ? QuoteMode.MANUAL
+            : QuoteMode.MARKET,
         preferredProvider: parsePreferredProvider(
           asset.providerConfig as Record<string, unknown> | null,
         ),
@@ -703,7 +706,9 @@ export function AssetEditSheet({
           name: values.name || "",
           notes: values.notes ?? "",
           instrumentType: values.instrumentType || null,
-          quoteMode: values.quoteMode,
+          // Discontinued is intentionally not editable from this form. Keep
+          // it unchanged when saving unrelated profile fields.
+          quoteMode: asset.quoteMode === "DISCONTINUED" ? "DISCONTINUED" : values.quoteMode,
           quoteCcy: values.quoteCcy,
           instrumentExchangeMic: normalizedMic || null,
           providerConfig: serializedOverrides,
