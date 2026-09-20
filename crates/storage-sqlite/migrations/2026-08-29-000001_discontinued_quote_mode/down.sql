@@ -52,6 +52,8 @@ CREATE TABLE assets_new (
     CHECK (provider_config IS NULL OR json_valid(provider_config))
 );
 
+DROP INDEX IF EXISTS idx_assets_instrument_key;
+
 CREATE UNIQUE INDEX idx_assets_instrument_key
 ON assets_new(instrument_key)
 WHERE instrument_key IS NOT NULL;
