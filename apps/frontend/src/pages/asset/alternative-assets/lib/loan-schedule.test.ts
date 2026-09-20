@@ -69,6 +69,27 @@ describe("loan schedule replacement", () => {
     expect(schedule.every(({ notes }) => notes?.startsWith("loan_schedule"))).toBe(true);
   });
 
+  it("treats the origination date as the first paid instalment", () => {
+    const schedule = buildLoanSchedule({
+      assetId: "loan",
+      currency: "EUR",
+      startingBalance: 347_000,
+      annualRate: 3.04,
+      paymentCount: 300,
+      firstPaymentDate: new Date(2025, 6, 7),
+    });
+
+    expect(schedule[0]).toMatchObject({
+      date: "2025-07-07",
+      close: 346_226.33,
+    });
+    expect(schedule[0]?.notes).toContain("payment=1652.7416");
+  });
+
+  it("counts the balance date as a paid instalment", () => {
+    expect(calculateBalanceAfterPayments(347_000, 3.04, 300, 15)).toBe(335_186.8);
+  });
+
   it("separates the zero payoff quote from batch-importable values", () => {
     const schedule = buildLoanSchedule({
       assetId: "loan",

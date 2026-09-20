@@ -186,7 +186,7 @@ export function getDefaultDetailsFormValues(
   };
 
   // Read sub_type from metadata (unified field for all asset types)
-  const subType = (metadata?.sub_type as string) ?? null;
+  const subType = (metadata?.sub_type ?? metadata?.liability_type) as string | null;
 
   switch (kind) {
     case AlternativeAssetKind.PROPERTY:
@@ -298,7 +298,10 @@ export function formValuesToMetadata(values: AssetDetailsFormValues): Record<str
       break;
 
     case AlternativeAssetKind.LIABILITY:
-      if (values.liabilityType) metadata.sub_type = values.liabilityType;
+      if (values.liabilityType) {
+        metadata.sub_type = values.liabilityType;
+        metadata.liability_type = values.liabilityType;
+      }
       if (values.originalAmount != null)
         metadata.original_amount = values.originalAmount.toString();
       if (values.originationDate)

@@ -307,7 +307,7 @@ export const HoldingsPage = () => {
       return liabilitiesHoldings
         .filter((h) => {
           const metadata = h.metadata as Record<string, unknown> | null | undefined;
-          const liabilityType = metadata?.liability_type;
+          const liabilityType = metadata?.sub_type ?? metadata?.liability_type;
           const linkedAssetId = metadata?.linked_asset_id;
           // Only mortgages that are not linked to any asset (or linked to this property for re-linking)
           return (

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { addMonths } from "date-fns";
+import { addMonths, differenceInCalendarMonths } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -292,7 +292,10 @@ export function AlternativeAssetQuickAddModal({
     }
 
     if (isLiability) {
-      if (formData.liabilityType) metadata.sub_type = formData.liabilityType;
+      if (formData.liabilityType) {
+        metadata.sub_type = formData.liabilityType;
+        metadata.liability_type = formData.liabilityType;
+      }
       if (formData.purchasePrice) metadata.original_amount = formData.purchasePrice;
       if (formData.purchaseDate) metadata.origination_date = formatDateToISO(formData.purchaseDate);
       if (formData.interestRate) metadata.interest_rate = formData.interestRate;
@@ -306,22 +309,21 @@ export function AlternativeAssetQuickAddModal({
           computedEndDate,
         );
         totalPaymentCount = termMonths;
-        completedPaymentCount = remainingSchedule
-          ? totalPaymentCount - remainingSchedule.paymentCount
-          : totalPaymentCount;
-        if (!formData.currentValue) {
-          const scheduledBalance = calculateBalanceAfterPayments(
-            parseFloat(formData.purchasePrice ?? "0"),
-            formData.interestRate ? parseFloat(formData.interestRate) : 0,
-            totalPaymentCount,
-            completedPaymentCount,
-          );
-          if (scheduledBalance !== null) currentValue = String(scheduledBalance);
-          balanceQuoteDate =
-            completedPaymentCount > 0
-              ? addMonths(formData.purchaseDate, completedPaymentCount)
-              : formData.purchaseDate;
-        }
+        // The balance date is itself a paid instalment. Include it in the
+        // amortization count instead of treating it as a snapshot after the
+        // latest payment (which would shift the balance by one month).
+        completedPaymentCount = Math.min(
+          totalPaymentCount,
+          Math.max(1, differenceInCalendarMonths(formData.valueDate, formData.purchaseDate) + 1),
+        );
+        const scheduledBalance = calculateBalanceAfterPayments(
+          parseFloat(formData.purchasePrice ?? "0"),
+          formData.interestRate ? parseFloat(formData.interestRate) : 0,
+          totalPaymentCount,
+          completedPaymentCount,
+        );
+        if (scheduledBalance !== null) currentValue = String(scheduledBalance);
+        balanceQuoteDate = formData.valueDate;
         const effectivePayment = remainingSchedule
           ? calculateMonthlyPayment(
               parseFloat(currentValue),
@@ -341,9 +343,13 @@ export function AlternativeAssetQuickAddModal({
       currency: formData.currency,
       currentValue,
       valueDate: formatDateToISO(balanceQuoteDate),
-      // Pass purchasePrice/purchaseDate for all asset types (including liabilities) to create historical quotes
-      purchasePrice: formData.purchasePrice || undefined,
-      purchaseDate: formData.purchaseDate ? formatDateToISO(formData.purchaseDate) : undefined,
+      // Liabilities use the amortization schedule for their historical quotes.
+      // Passing purchasePrice/purchaseDate here would create an extra opening
+      // balance before the first instalment and make the origination row show
+      // zero principal. Other alternative assets still use the purchase quote.
+      purchasePrice: !isLiability ? formData.purchasePrice || undefined : undefined,
+      purchaseDate:
+        !isLiability && formData.purchaseDate ? formatDateToISO(formData.purchaseDate) : undefined,
       metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
       linkedAssetId: formData.linkedAssetId || undefined,
     };
@@ -359,7 +365,7 @@ export function AlternativeAssetQuickAddModal({
         startingBalance: parseFloat(formData.purchasePrice ?? "0"),
         annualRate,
         paymentCount: totalPaymentCount,
-        firstPaymentDate: addMonths(formData.purchaseDate, 1),
+        firstPaymentDate: formData.purchaseDate,
       });
       const historicalSchedule = contractualSchedule.filter((quote) => quote.date < balanceDay);
       const futureSchedule = remainingSchedule

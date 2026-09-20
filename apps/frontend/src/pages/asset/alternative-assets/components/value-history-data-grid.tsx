@@ -29,7 +29,7 @@ import { parseLocalDate } from "@/lib/utils";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { toast } from "@wealthfolio/ui/components/ui/use-toast";
 import { ValueHistoryToolbar } from "./value-history-toolbar";
-import { format } from "date-fns";
+import { format, isLastDayOfMonth } from "date-fns";
 
 const MOBILE_PAGE_SIZE = 20;
 
@@ -70,6 +70,8 @@ interface ValueHistoryDataGridProps {
   interestRate?: number;
   /** Original loan amount (before any payments) — enables capital/interest display for the first entry */
   loanOriginalAmount?: number;
+  /** Contractual first payment date; used to distinguish balance snapshots from payments */
+  loanOriginationDate?: Date;
   /** Callback to save a quote */
   onSaveQuote: (quote: Quote) => Promise<void>;
   /** Callback to delete a quote */
@@ -148,6 +150,7 @@ export function ValueHistoryDataGrid({
   isLiability = false,
   interestRate,
   loanOriginalAmount,
+  loanOriginationDate,
   onSaveQuote,
   onDeleteQuote,
   onPersistComplete,
@@ -206,6 +209,15 @@ export function ValueHistoryDataGrid({
       const prevValue = i === 0 ? loanOriginalAmount! : sortedAsc[i - 1].value;
       const curr = sortedAsc[i];
       const isEarlyRepayment = curr.notes?.startsWith("early_repayment:");
+      const isScheduledPayment = curr.notes?.startsWith("loan_schedule|");
+      const isContractualPaymentDate =
+        loanOriginationDate !== undefined &&
+        (isLastDayOfMonth(loanOriginationDate)
+          ? isLastDayOfMonth(curr.date)
+          : curr.date.getDate() === loanOriginationDate.getDate());
+      // A manually recorded balance between payment dates is a snapshot, not
+      // an instalment. Keep it out of the capital/interest calculation.
+      if (!isScheduledPayment && !isEarlyRepayment && !isContractualPaymentDate) continue;
       const scheduleRate = /(?:^|\|)rate=([\d.]+)/.exec(curr.notes ?? "")?.[1];
       const effectiveMonthlyRate = scheduleRate
         ? Number.parseFloat(scheduleRate) / 100 / 12
@@ -224,7 +236,7 @@ export function ValueHistoryDataGrid({
       result.set(curr.id, { capital, interest });
     }
     return result;
-  }, [isLiability, interestRate, loanOriginalAmount, localEntries]);
+  }, [isLiability, interestRate, loanOriginalAmount, loanOriginationDate, localEntries]);
 
   // Column definitions
   const columnHelper = createColumnHelper<ValueHistoryEntry>();

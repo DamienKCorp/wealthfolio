@@ -53,6 +53,7 @@ import { importManualQuotes } from "@/adapters";
 import { useAlternativeAssetMutations } from "./alternative-assets/hooks/use-alternative-asset-mutations";
 import {
   buildLoanSchedule,
+  calculateBalanceAfterPayments,
   calculateMonthlyPayment,
   calculateRemainingPaymentCount,
   getObsoleteFutureQuoteIds,
@@ -341,8 +342,36 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     const sortedPast = [...quoteHistory]
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       .filter((q) => new Date(q.timestamp) <= today);
-    const latestBalance =
-      sortedPast.length > 0 ? Math.abs(sortedPast[sortedPast.length - 1].close) : currentBalance;
+    const latestQuote = sortedPast.at(-1);
+    let latestBalance = latestQuote ? Math.abs(latestQuote.close) : currentBalance;
+
+    // A balance-date quote may have been created before the origination date
+    // became the first instalment. Align that persisted quote with the same
+    // amortization count used for the replacement schedule; otherwise the
+    // first future quote is effectively one payment ahead of the displayed
+    // balance.
+    const hasEarlyRepayment = sortedPast.some((quote) =>
+      quote.notes?.startsWith("early_repayment:"),
+    );
+    const expectedBalance = !hasEarlyRepayment
+      ? calculateBalanceAfterPayments(loanOriginalAmount, newRate, N, startIndex)
+      : null;
+    if (
+      latestQuote &&
+      expectedBalance !== null &&
+      !latestQuote.notes?.startsWith("loan_schedule") &&
+      !latestQuote.notes?.startsWith("early_repayment:")
+    ) {
+      latestBalance = expectedBalance;
+      await saveQuoteMutation.mutateAsync({
+        ...latestQuote,
+        open: expectedBalance,
+        high: expectedBalance,
+        low: expectedBalance,
+        close: expectedBalance,
+        adjclose: expectedBalance,
+      });
+    }
 
     const remainingN = N - startIndex + 1;
     const P = calculateMonthlyPayment(latestBalance, newRate, remainingN);
@@ -701,6 +730,9 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         isLiability={isLiability}
         interestRate={isLiability ? interestRate : undefined}
         loanOriginalAmount={isLiability ? loanOriginalAmount : undefined}
+        loanOriginationDate={
+          isLiability && loanOriginationDate ? parseISO(loanOriginationDate) : undefined
+        }
         onSaveQuote={(quote: Quote) => saveQuoteMutation.mutateAsync(quote)}
         onDeleteQuote={(id: string) => deleteQuoteMutation.mutateAsync(id)}
         onPersistComplete={invalidateQuoteQueries}
