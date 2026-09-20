@@ -2,7 +2,8 @@
   "needs_review_alert": {
     "title_one": "{{count}} Aktivität muss geprüft werden",
     "title_other": "{{count}} Aktivitäten müssen geprüft werden",
-    "description": "Prüfen Sie bei jeder Transaktion Vermögenswert, Typ und Endbetrag."
+    "description": "Prüfen Sie bei jeder Transaktion Vermögenswert, Typ und Endbetrag.",
+    "action": "Prüfen"
   },
   "activities": "Aktivitäten",
   "add_activity": "Aktivität hinzufügen",
@@ -79,7 +80,6 @@
   "duplicate": "Duplizieren",
   "delete": "Löschen",
   "loading": "Wird geladen...",
-  "load_more": "Mehr laden",
   "search_placeholder": "Suchen...",
   "clear_search": "Suche löschen",
   "filter_account": "Konto",
@@ -187,7 +187,7 @@
   "import_help_docs_activity_ref": "Dokumentation zu Aktivitätstypen",
   "import_help_how_to_title": "CSV-Import Hilfe?",
   "import_help_how_to_mobile": "CSV-Import Hilfe?",
-  "pagination_count": "{{fetched}} / {{total}} Aktivitäten",
+  "pagination_count": "{{fetched}}/{{total}} Aktivitäten",
   "manager": {
     "add_to_account": "Eine neue Transaktion zu {{account}} hinzufügen",
     "create_transaction": "Eine neue Transaktion oder Aktivität für Ihr Konto erstellen",
@@ -240,7 +240,8 @@
     "status_all": "Alle Aktivitäten",
     "status_pending": "Prüfung ausstehend",
     "status_validated": "Validiert",
-    "instrument": "Instrument"
+    "instrument": "Instrument",
+    "instrument_all": "Alle Instrumente"
   },
   "detail": {
     "status_posted": "Gebucht",
@@ -524,6 +525,7 @@
     "err_underlying_required": "Das Basiswert-Symbol ist erforderlich.",
     "err_strike_required": "Der Ausübungspreis ist erforderlich.",
     "err_expiration_required": "Das Verfallsdatum ist erforderlich.",
+    "err_expiration_invalid": "Gib ein gültiges Verfallsdatum ein.",
     "err_option_type_required": "Der Optionstyp ist erforderlich.",
     "err_enter_split_ratio": "Bitte geben Sie ein Split-Verhältnis ein.",
     "err_split_ratio_number": "Das Split-Verhältnis muss eine Zahl sein.",
@@ -1212,7 +1214,9 @@
       "positionsCount_one": "{{count}} Bestand",
       "positionsCount_other": "{{count}} Bestände",
       "readyRows_one": "{{count}} Zeile",
-      "readyRows_other": "{{count}} Zeilen"
+      "readyRows_other": "{{count}} Zeilen",
+      "ambiguousDateTitle": "Datumsreihenfolge ist mehrdeutig",
+      "ambiguousDateHint": "Datumsangaben wie {{example}} können als Tag/Monat oder Monat/Tag gelesen werden. Diese Datei enthält keine eindeutigen Hinweise. Gehe zurück und wähle ein Datumsformat statt der automatischen Erkennung."
     },
     "symbolPanel": {
       "unrecognized_one": "{{count}} nicht erkanntes Symbol",

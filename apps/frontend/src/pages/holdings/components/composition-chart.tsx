@@ -1,12 +1,13 @@
 import { RenderableChartContainer } from "@/components/renderable-chart-container";
+import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { usePersistentState } from "@/hooks/use-persistent-state";
 import { getBaseHoldingPerformancePercentForMode } from "@/lib/holding-performance";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { Holding } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
+  AmountDisplay,
   AnimatedToggleGroup,
-  useAmountFormatting,
   useDateFormatting,
   useNumberFormatting,
 } from "@wealthfolio/ui";
@@ -252,9 +253,9 @@ interface TooltipProps {
 }
 
 const CompositionTooltip = ({ active, payload, settings }: TooltipProps) => {
-  const amountFormatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
+  const { isBalanceHidden } = useBalancePrivacy();
 
   const { t } = useTranslation();
   if (active && payload?.length) {
@@ -286,9 +287,12 @@ const CompositionTooltip = ({ active, payload, settings }: TooltipProps) => {
               <span className="text-muted-foreground pr-6 text-sm">
                 {t("holdings:market_value_label")}
               </span>
-              <span className="text-sm font-semibold">
-                {amountFormatting.formatAmount(value, settings?.baseCurrency ?? "USD")}
-              </span>
+              <AmountDisplay
+                value={value}
+                currency={settings?.baseCurrency ?? "USD"}
+                isHidden={isBalanceHidden}
+                className="text-sm font-semibold"
+              />
             </div>
 
             {/* Gain/Loss */}
@@ -405,7 +409,7 @@ export function PortfolioComposition({ holdings, isLoading }: PortfolioCompositi
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex shrink-0 flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <div className="flex items-center space-x-2">
           <CardTitle className="text-muted-foreground text-sm font-medium uppercase tracking-wider">
             {t("holdings:composition")}

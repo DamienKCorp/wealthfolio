@@ -2,6 +2,7 @@
   "app_name": "Wealthfolio",
   "welcome": "환영합니다",
   "loading": "로딩 중...",
+  "load_more": "더 보기...",
   "error": "오류",
   "success": "성공",
   "cancel": "취소",
@@ -173,12 +174,12 @@
     "theme_light": "테마 → 라이트",
     "theme_dark": "테마 → 다크",
     "theme_system": "테마 → 시스템",
-    "update_quotes": "시세 업데이트",
-    "update_quotes_label": "시세 업데이트",
+    "update_quotes": "가격 업데이트",
+    "update_quotes_label": "가격 업데이트",
     "updating_quotes": "시세 업데이트 중...",
-    "rebuild_full_history": "전체 기록 재구성",
-    "rebuild_full_history_label": "전체 기록 재구성",
-    "rebuilding_history": "기록 재구성 중...",
+    "rebuild_full_history": "전체 기록 새로고침",
+    "rebuild_full_history_label": "전체 기록 새로고침",
+    "rebuilding_history": "전체 기록 새로고침…",
     "record_buy": "매수 기록",
     "record_sell": "매도 기록",
     "record_dividend": "배당금 기록",
@@ -354,5 +355,6 @@
   "navStyle": {
     "sidebar": "사이드바",
     "floating": "플로팅 바"
-  }
+  },
+  "allocation_other_in_category": "기타 {{category}}"
 }

@@ -2,6 +2,7 @@
   "app_name": "Wealthfolio",
   "welcome": "Welcome",
   "loading": "Loading...",
+  "load_more": "Load more...",
   "error": "Error",
   "success": "Success",
   "cancel": "Cancel",
@@ -173,12 +174,12 @@
     "theme_light": "Theme → Light",
     "theme_dark": "Theme → Dark",
     "theme_system": "Theme → System",
-    "update_quotes": "Update Quotes",
-    "update_quotes_label": "Update quotes",
+    "update_quotes": "Update prices",
+    "update_quotes_label": "Update prices",
     "updating_quotes": "Updating quotes...",
-    "rebuild_full_history": "Rebuild Full History",
-    "rebuild_full_history_label": "Rebuild full history",
-    "rebuilding_history": "Rebuilding history...",
+    "rebuild_full_history": "Refresh full history",
+    "rebuild_full_history_label": "Refresh full history",
+    "rebuilding_history": "Refresh full history…",
     "record_buy": "Record Buy",
     "record_sell": "Record Sell",
     "record_dividend": "Record Dividend",
@@ -363,5 +364,6 @@
   "navStyle": {
     "sidebar": "Sidebar",
     "floating": "Floating Bar"
-  }
+  },
+  "allocation_other_in_category": "Other {{category}}"
 }

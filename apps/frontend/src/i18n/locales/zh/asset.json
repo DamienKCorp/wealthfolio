@@ -22,10 +22,21 @@
     "deleting": "正在删除……"
   },
   "refreshDialog": {
-    "title": "刷新历史",
-    "description_named": "这将删除并以最新数据替换 {{name}} 的所有提供商报价。手动报价将被保留。是否继续？",
-    "description_generic": "这将删除并以最新数据替换所有提供商报价。手动报价将被保留。是否继续？",
+    "title": "刷新全部历史",
+    "description_named": "将获取{{name}}的新价格历史并与现有价格合并。旧历史、手动价格和券商价格将保留。继续吗？",
+    "description_generic": "将获取新价格历史并与现有价格合并。旧历史、手动价格和券商价格将保留。继续吗？",
     "refresh": "刷新"
+  },
+  "resetDialog": {
+    "globalDescription": "替换所有符合条件的资产（包括货币对）的供应商价格？每项资产的历史均在获取和验证后替换，替换后的历史可能较短。手动和经纪商价格将保留。失败资产保留原有历史，成功的替换不会回滚。",
+    "globalResult": "已替换：{{succeeded}}。失败：{{failed}}。已跳过：{{skipped}}。",
+    "title": "重置数据源历史",
+    "description": "将{{name}}的所有数据源价格替换为新获取的历史记录吗？新历史可能更短。手动价格和券商价格将保留。如果获取或验证失败，现有历史将保留。",
+    "confirm": "重置数据源历史",
+    "resetting": "正在重置…",
+    "success": "数据源历史已替换",
+    "complete": "价格已替换。已请求重新计算投资组合。",
+    "uncertain": "响应已中断；价格可能已被替换。请检查价格历史并刷新页面后，再考虑是否需要再次重置。"
   },
   "createSecurity": {
     "title": "添加证券",
@@ -154,7 +165,8 @@
     "maturity": "到期",
     "type": "类型",
     "strike": "行权价",
-    "expiry": "到期日"
+    "expiry": "到期日",
+    "multiplier": "乘数"
   },
   "profile": {
     "overview": "概览",
@@ -177,7 +189,7 @@
     "record_transaction": "记录交易",
     "valuation": "估值",
     "update_price": "更新价格",
-    "refresh_history": "刷新历史",
+    "refresh_history": "刷新全部历史",
     "edit": "编辑",
     "update_value": "更新价值",
     "edit_details": "编辑详情",
@@ -265,6 +277,18 @@
     "exchange": "交易所",
     "select_exchange": "选择交易所",
     "search_exchanges": "搜索交易所……",
+    "contract_multiplier": "合约乘数",
+    "contract_multiplier_hint": "每份合约代表的标的单位数。留空则使用标准值 {{default}}。",
+    "maturity_date": "到期日",
+    "coupon_rate": "票息率 (%)",
+    "coupon_frequency": "付息频率",
+    "select_frequency": "选择频率",
+    "couponFrequency": {
+      "ANNUAL": "每年",
+      "SEMI_ANNUAL": "每半年",
+      "QUARTERLY": "每季度",
+      "ZERO": "零息"
+    },
     "saving": "正在保存……",
     "saving_short": "保存中",
     "save_changes": "保存更改",
@@ -708,5 +732,34 @@
     "delete_count_other": "删除（{{count}}）",
     "modified_other": "{{count}} 项已修改",
     "to_delete_other": "{{count}} 项待删除"
+  },
+  "logo": {
+    "change": "更换 Logo",
+    "title": "资产 Logo",
+    "badge_default": "默认",
+    "badge_custom": "自定义",
+    "updated_at": "更新于 {{date}}",
+    "dropzone_cta": "选择图片",
+    "dropzone_or_drop": "或将图片拖放到此处",
+    "dropzone_hint": "支持 PNG、JPEG、WebP 或 SVG · 将缩放为 256×256 PNG",
+    "processing": "正在处理图片…",
+    "preview_title": "预览",
+    "preview_new": "新徽标",
+    "preview_current": "当前徽标",
+    "preview_card": "持仓卡片",
+    "preview_table": "持仓表格",
+    "preview_list": "活动列表",
+    "preview_meta": "{{width}}×{{height}} · {{size}}（原始 {{original}}）",
+    "choose_different": "选择其他图片",
+    "save": "保存 Logo",
+    "reset": "恢复默认",
+    "saved": "Logo 已保存。",
+    "reset_done": "Logo 已恢复为默认。",
+    "error_unsupported_type": "不支持的文件。请使用 PNG、JPEG、WebP 或 SVG 图片。",
+    "error_too_large_input": "文件过大。请选择小于 10 MB 的图片。",
+    "error_decode_failed": "无法将该文件读取为图片。",
+    "error_encode_failed": "无法将图片转换为 PNG。",
+    "error_too_large_output": "图片过于复杂，无法压缩到 150 KB 以内。请尝试更简单或更小的图片。",
+    "error_save_failed": "无法保存 Logo。"
   }
 }

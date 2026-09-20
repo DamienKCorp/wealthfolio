@@ -202,7 +202,27 @@ async fn process_event_batch(
     // 2. Plan and run portfolio job directly (not via event emission)
     // This ensures the is_processing guard properly tracks completion
     let timezone = context.get_timezone();
-    if let Some(payload) = plan_portfolio_job(events, &timezone) {
+    if let Some(mut payload) = plan_portfolio_job(events, &timezone) {
+        let prices_changed = events
+            .iter()
+            .any(|event| matches!(event, DomainEvent::PriceHistoryChanged));
+        if prices_changed {
+            context.health_service().clear_cache().await;
+            // Saved prices affect archived account history and the in-memory FX cache too.
+            let accounts = context
+                .fx_service()
+                .initialize()
+                .and_then(|()| context.account_service().get_all_accounts());
+            match accounts {
+                Ok(accounts) => {
+                    payload.account_ids = Some(accounts.into_iter().map(|a| a.id).collect())
+                }
+                Err(error) => {
+                    let _ = app_handle.emit(PORTFOLIO_UPDATE_ERROR, error.to_string());
+                    return;
+                }
+            }
+        }
         run_portfolio_job(app_handle, context, payload).await;
 
         // 2b. Refresh all active goal summaries after portfolio valuations update.
@@ -289,9 +309,10 @@ async fn spawn_auto_categorize_for_batch(events: &[DomainEvent], context: &Arc<S
         "Triggering auto-categorization for {} account(s)",
         account_ids.len()
     );
-    let rules_service = context.categorization_rules_service();
+    let context = Arc::clone(context);
     tokio::spawn(async move {
-        match rules_service
+        match context
+            .categorization_rules_service()
             .rerun_all(&account_ids, /* only_uncategorized */ true)
             .await
         {
@@ -420,9 +441,22 @@ async fn run_portfolio_job(
                     error!("Failed to emit market:sync-error event: {}", e_emit);
                 }
                 error!(
-                    "Market data sync failed: {}. Skipping portfolio calculation.",
+                    "Market data sync failed: {}. Recalculating with cached quotes.",
                     e
                 );
+
+                // The change that queued this job — an edited asset, a new
+                // activity — still has to reach the portfolio. Fetching quotes
+                // is a separate concern, and a provider outage or an offline
+                // device must not leave the portfolio on stale values.
+                run_portfolio_calculation(
+                    app_handle,
+                    context,
+                    accounts_to_recalc,
+                    snapshot_mode,
+                    valuation_mode,
+                )
+                .await;
             }
         }
     } else {
@@ -549,6 +583,7 @@ async fn run_portfolio_calculation(
         }
     }
 
+    context.health_service().clear_cache().await;
     // Emit completion event
     if let Err(e) = app_handle.emit(PORTFOLIO_UPDATE_COMPLETE, &()) {
         error!("Failed to emit portfolio:update-complete event: {}", e);

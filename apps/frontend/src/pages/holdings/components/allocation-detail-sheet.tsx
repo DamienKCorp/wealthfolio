@@ -9,13 +9,15 @@ import {
 } from "@wealthfolio/ui/components/ui/sheet";
 import { AmountDisplay, Skeleton } from "@wealthfolio/ui";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { getHoldingsByAllocation } from "@/adapters";
+import { namedChild, namedChildren } from "@/lib/allocation-children";
 import { TickerAvatar } from "@/components/ticker-avatar";
+import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { HoldingType } from "@/lib/constants";
 import type {
   AccountScope,
@@ -48,10 +50,17 @@ export function AllocationDetailSheet({
 }: AllocationDetailSheetProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const { isBalanceHidden } = useBalancePrivacy();
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [selectedCategoryName, setSelectedCategoryName] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+
+  const residualName = useCallback(
+    (categoryName: string) => t("common:allocation_other_in_category", { category: categoryName }),
+    [t],
+  );
 
   // Set initial category when sheet opens
   useEffect(() => {
@@ -64,8 +73,9 @@ export function AllocationDetailSheet({
       // If not a top-level, search children to find the parent
       if (!category && categoryId) {
         for (const parent of allocation.categories) {
-          childMatch = parent.children?.find((child) => child.categoryId === categoryId);
-          if (childMatch) {
+          const match = parent.children?.find((child) => child.categoryId === categoryId);
+          if (match) {
+            childMatch = namedChild(parent, match, residualName);
             category = parent;
             break;
           }
@@ -90,7 +100,7 @@ export function AllocationDetailSheet({
         }
       }
     }
-  }, [isOpen, initialCategoryId, allocation?.categories]);
+  }, [isOpen, initialCategoryId, allocation?.categories, residualName]);
 
   const taxonomyId = allocation?.taxonomyId ?? "";
   const categoryId = selectedCategoryId ?? "";
@@ -200,12 +210,18 @@ export function AllocationDetailSheet({
     <Sheet open={isOpen} onOpenChange={handleOpenChange}>
       <SheetContent
         className="flex w-full flex-col overflow-hidden sm:max-w-xl"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          titleRef.current?.focus();
+        }}
         style={{
           paddingTop: "max(env(safe-area-inset-top, 0px), 1.5rem)",
         }}
       >
         <SheetHeader className="mt-4">
-          <SheetTitle>{allocation?.taxonomyName ?? t("holdings:allocation")}</SheetTitle>
+          <SheetTitle ref={titleRef} tabIndex={-1} className="outline-none">
+            {allocation?.taxonomyName ?? t("holdings:allocation")}
+          </SheetTitle>
         </SheetHeader>
 
         <div className="flex-1 space-y-4 overflow-y-auto py-4">
@@ -264,6 +280,7 @@ export function AllocationDetailSheet({
                       <AmountDisplay
                         value={category.value}
                         currency={baseCurrency}
+                        isHidden={isBalanceHidden}
                         className="shrink-0 text-sm"
                       />
                       <span className="text-muted-foreground w-12 shrink-0 text-right text-xs tabular-nums">
@@ -282,7 +299,7 @@ export function AllocationDetailSheet({
                           <div
                             className={`bg-muted/30 ${!(isLast && isExpanded) ? "border-t" : ""}`}
                           >
-                            {category.children!.map((child, childIdx) => {
+                            {namedChildren(category, residualName).map((child, childIdx) => {
                               const isChildSelected = selectedCategoryId === child.categoryId;
 
                               return (
@@ -306,6 +323,7 @@ export function AllocationDetailSheet({
                                   <AmountDisplay
                                     value={child.value}
                                     currency={baseCurrency}
+                                    isHidden={isBalanceHidden}
                                     className="text-muted-foreground shrink-0 text-xs"
                                   />
                                   <span className="text-muted-foreground w-12 shrink-0 text-right text-xs tabular-nums">
@@ -408,7 +426,13 @@ export function AllocationDetailSheet({
                         )}
                         onClick={() => handleHoldingClick(holding)}
                       >
-                        <TickerAvatar symbol={avatarSymbol} className="h-9 w-9" />
+                        <TickerAvatar
+                          symbol={avatarSymbol}
+                          assetId={holding.id}
+                          exchangeMic={holding.exchangeMic}
+                          instrumentType={holding.instrumentType}
+                          className="h-9 w-9"
+                        />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold">{primaryLabel}</p>
                           <p className="text-muted-foreground truncate text-xs">{secondaryLabel}</p>
@@ -417,6 +441,7 @@ export function AllocationDetailSheet({
                           <AmountDisplay
                             value={holding.marketValue}
                             currency={baseCurrency}
+                            isHidden={isBalanceHidden}
                             className="text-sm font-medium"
                           />
                           <p className="text-muted-foreground text-xs">

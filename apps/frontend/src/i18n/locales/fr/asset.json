@@ -22,10 +22,21 @@
     "deleting": "Suppression..."
   },
   "refreshDialog": {
-    "title": "Actualiser l'historique",
-    "description_named": "Cela supprimera et remplacera toutes les cotations du fournisseur par des données actualisées pour {{name}}. Les cotations manuelles seront conservées. Continuer ?",
-    "description_generic": "Cela supprimera et remplacera toutes les cotations du fournisseur par des données actualisées. Les cotations manuelles seront conservées. Continuer ?",
+    "title": "Actualiser tout l’historique",
+    "description_named": "Les nouvelles cotations de {{name}} seront fusionnées avec les prix existants. L’historique antérieur et les prix manuels ou du courtier seront conservés. Continuer ?",
+    "description_generic": "Les nouvelles cotations seront fusionnées avec les prix existants. L’historique antérieur et les prix manuels ou du courtier seront conservés. Continuer ?",
     "refresh": "Actualiser"
+  },
+  "resetDialog": {
+    "globalDescription": "Remplacer les cours des fournisseurs pour tous les actifs admissibles, y compris les paires de devises ? Chaque historique est récupéré et validé avant son remplacement. Il peut être plus court. Les cours manuels et du courtier sont conservés. Les actifs en échec conservent leur historique ; les remplacements réussis ne sont pas annulés.",
+    "globalResult": "Remplacés : {{succeeded}}. Échecs : {{failed}}. Ignorés : {{skipped}}.",
+    "title": "Réinitialiser l’historique du fournisseur",
+    "description": "Remplacer tous les prix du fournisseur pour {{name}} par un nouvel historique ? Celui-ci peut être plus court. Les prix manuels et du courtier seront conservés. L’historique existant est conservé si la récupération ou la validation échoue.",
+    "confirm": "Réinitialiser l’historique du fournisseur",
+    "resetting": "Réinitialisation…",
+    "success": "Historique du fournisseur remplacé",
+    "complete": "Les cours ont été remplacés. Le recalcul du portefeuille a été demandé.",
+    "uncertain": "La réponse a été interrompue ; les prix peuvent déjà avoir été remplacés. Vérifiez l’historique et actualisez la page avant d’envisager une nouvelle réinitialisation."
   },
   "createSecurity": {
     "title": "Ajouter un titre",
@@ -154,7 +165,8 @@
     "maturity": "Échéance",
     "type": "Type",
     "strike": "Prix d'exercice",
-    "expiry": "Expiration"
+    "expiry": "Expiration",
+    "multiplier": "Multiplicateur"
   },
   "profile": {
     "overview": "Aperçu",
@@ -177,7 +189,7 @@
     "record_transaction": "Enregistrer une transaction",
     "valuation": "Évaluation",
     "update_price": "Mettre à jour le prix",
-    "refresh_history": "Actualiser l'historique",
+    "refresh_history": "Actualiser tout l’historique",
     "edit": "Modifier",
     "update_value": "Mettre à jour la valeur",
     "edit_details": "Modifier les détails",
@@ -265,6 +277,18 @@
     "exchange": "Bourse",
     "select_exchange": "Sélectionner une bourse",
     "search_exchanges": "Rechercher des bourses...",
+    "contract_multiplier": "Multiplicateur du contrat",
+    "contract_multiplier_hint": "Chaque contrat représente ce nombre d'unités sous-jacentes. Laissez vide pour utiliser la valeur standard de {{default}}.",
+    "maturity_date": "Date d’échéance",
+    "coupon_rate": "Taux du coupon (%)",
+    "coupon_frequency": "Fréquence du coupon",
+    "select_frequency": "Sélectionner la fréquence",
+    "couponFrequency": {
+      "ANNUAL": "Annuelle",
+      "SEMI_ANNUAL": "Semestrielle",
+      "QUARTERLY": "Trimestrielle",
+      "ZERO": "Coupon zéro"
+    },
     "saving": "Enregistrement...",
     "saving_short": "Enregistrement",
     "save_changes": "Enregistrer les modifications",
@@ -329,12 +353,15 @@
     "lots_by_account": "Lots par compte",
     "account_one": "{{count}} compte",
     "account_other": "{{count}} comptes",
+    "account_many": "{{count}} comptes",
     "lot_one": "{{count}} lot",
     "lot_other": "{{count}} lots",
+    "lot_many": "{{count}} lots",
     "collapse_all": "Tout réduire",
     "expand_all": "Tout développer",
     "share_one": "part",
     "share_other": "parts",
+    "share_many": "parts",
     "market_value": "Valeur de marché",
     "shares_suffix": "parts",
     "cost_basis": "Prix de revient",
@@ -411,7 +438,8 @@
     "to_manual_warning": "Les mises à jour automatiques des prix seront désactivées.",
     "confirm_change": "Confirmer le changement",
     "delete_count_one": "Supprimer ({{count}})",
-    "delete_count_other": "Supprimer ({{count}})"
+    "delete_count_other": "Supprimer ({{count}})",
+    "delete_count_many": "Supprimer ({{count}})"
   },
   "quoteTable": {
     "date": "Date",
@@ -708,9 +736,41 @@
     "save_changes": "Enregistrer les modifications",
     "delete_count_one": "Supprimer ({{count}})",
     "delete_count_other": "Supprimer ({{count}})",
+    "delete_count_many": "Supprimer ({{count}})",
     "modified_one": "{{count}} modifié",
     "modified_other": "{{count}} modifié(s)",
+    "modified_many": "{{count}} modifié(s)",
     "to_delete_one": "{{count}} à supprimer",
-    "to_delete_other": "{{count}} à supprimer"
+    "to_delete_other": "{{count}} à supprimer",
+    "to_delete_many": "{{count}} à supprimer"
+  },
+  "logo": {
+    "change": "Changer le logo",
+    "title": "Logo de l'actif",
+    "badge_default": "Par défaut",
+    "badge_custom": "Personnalisé",
+    "updated_at": "Mis à jour le {{date}}",
+    "dropzone_cta": "Choisir une image",
+    "dropzone_or_drop": "ou glissez-déposez-la ici",
+    "dropzone_hint": "PNG, JPEG, WebP ou SVG · redimensionnée en PNG 256×256",
+    "processing": "Préparation de l'image…",
+    "preview_title": "Aperçu",
+    "preview_new": "Nouveau logo",
+    "preview_current": "Logo actuel",
+    "preview_card": "Carte de position",
+    "preview_table": "Tableau des positions",
+    "preview_list": "Liste des activités",
+    "preview_meta": "{{width}}×{{height}} · {{size}} (au lieu de {{original}})",
+    "choose_different": "Choisir une autre image",
+    "save": "Enregistrer le logo",
+    "reset": "Rétablir le logo par défaut",
+    "saved": "Logo enregistré.",
+    "reset_done": "Logo par défaut rétabli.",
+    "error_unsupported_type": "Fichier non pris en charge. Utilisez une image PNG, JPEG, WebP ou SVG.",
+    "error_too_large_input": "Ce fichier est trop volumineux. Choisissez une image de moins de 10 Mo.",
+    "error_decode_failed": "Le fichier n'a pas pu être lu comme une image.",
+    "error_encode_failed": "L'image n'a pas pu être convertie en PNG.",
+    "error_too_large_output": "L'image est trop détaillée pour tenir dans 150 Ko. Essayez une image plus simple ou plus petite.",
+    "error_save_failed": "Le logo n'a pas pu être enregistré."
   }
 }

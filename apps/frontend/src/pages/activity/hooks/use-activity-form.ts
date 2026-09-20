@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import type { AccountSelectOption } from "../components/forms/fields";
 import type { NewActivityFormValues } from "../components/forms/schemas";
 import type { TransferFormValues } from "../components/forms/transfer-form";
+import type { AdjustmentFormValues } from "../components/forms/adjustment-form";
 import {
   ACTIVITY_FORM_CONFIG,
   type ActivityFormValues,
@@ -305,8 +306,10 @@ export function useActivityForm({
             if (activity.sourceGroupId && (!transferOutId || !transferInId)) {
               try {
                 const pair = await getTransferPairForActivity(activity.id);
-                transferOutId = pair.transferOut.id;
-                transferInId = pair.transferIn.id;
+                if (pair) {
+                  transferOutId = pair.transferOut.id;
+                  transferInId = pair.transferIn.id;
+                }
               } catch {
                 // Invalid/orphan groups are cleared by the single-row external update below.
               }
@@ -355,11 +358,26 @@ export function useActivityForm({
         }
 
         if (isEditing && activity?.id) {
+          const currentAssetId =
+            selectedType === ActivityType.ADJUSTMENT &&
+            (formData as AdjustmentFormValues).adjustmentMode === "cash"
+              ? undefined
+              : activity.assetId;
+          const clearAsset = Boolean(
+            activity.assetId &&
+            selectedType === ActivityType.ADJUSTMENT &&
+            (formData as AdjustmentFormValues).adjustmentMode === "cash",
+          );
           await updateActivityMutation.mutateAsync({
             id: activity.id,
-            currentAssetId: activity.assetId,
+            currentAssetId,
+            clearAsset,
             ...submitData,
-          } as NewActivityFormValues & { id: string; currentAssetId?: string });
+          } as NewActivityFormValues & {
+            id: string;
+            currentAssetId?: string;
+            clearAsset?: boolean;
+          });
         } else {
           await addActivityMutation.mutateAsync(submitData);
         }

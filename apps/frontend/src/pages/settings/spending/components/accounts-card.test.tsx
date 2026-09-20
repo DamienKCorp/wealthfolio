@@ -25,6 +25,7 @@ vi.mock("@wealthfolio/ui", () => ({
   Switch: ({ checked, "aria-label": ariaLabel }: { checked: boolean; "aria-label"?: string }) => (
     <button type="button" role="switch" aria-checked={checked} aria-label={ariaLabel} />
   ),
+  useLocalizationSettings: () => ({ locale: "en-US", uiLocale: "en" }),
 }));
 
 vi.mock("@/features/spending/hooks/use-spending-settings", () => ({
@@ -67,9 +68,11 @@ function mockSettings(accountIds: string[]) {
     settings: {
       enabled: true,
       accountIds,
+      excludedCategoryIds: [],
     },
     isEnabled: true,
     accountIds,
+    excludedCategoryIds: [],
     isLoading: false,
     error: null,
   });

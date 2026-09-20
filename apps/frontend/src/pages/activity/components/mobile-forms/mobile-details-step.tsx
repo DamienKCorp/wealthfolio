@@ -32,6 +32,7 @@ import { useEffect, useMemo, useState, type RefObject } from "react";
 import { useFormContext } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useAmountFormatting } from "@wealthfolio/ui";
+import { useActivityCurrency } from "../../hooks/use-activity-currency";
 import {
   AdvancedOptionsSection,
   AssetTypeSelector,
@@ -120,8 +121,8 @@ export function MobileDetailsStep({
 }: MobileDetailsStepProps) {
   const { t } = useTranslation();
   const formatting = useNumberFormatting();
-  const { control, getFieldState, getValues, watch, setValue, register } =
-    useFormContext<NewActivityFormValues>();
+  const form = useFormContext<NewActivityFormValues>();
+  const { control, getFieldState, getValues, watch, setValue, register } = form;
   const { settings } = useSettingsContext();
   const isManualAsset = watch("quoteMode") === QuoteMode.MANUAL;
   const accountId = watch("accountId");
@@ -178,16 +179,22 @@ export function MobileDetailsStep({
 
   const isCreditActivity = activityType === ActivityType.CREDIT;
   const isAdjustmentActivity = activityType === ActivityType.ADJUSTMENT;
+  const adjustmentAssetId = isAdjustmentActivity ? watch("assetId") : undefined;
+  const adjustmentAmount = isAdjustmentActivity ? watch("amount") : undefined;
+  const isCashAdjustment =
+    isAdjustmentActivity && !!isEditing && !adjustmentAssetId?.trim() && adjustmentAmount != null;
   const isFeeActivity = activityType === ActivityType.FEE;
   const isTaxActivity = activityType === ActivityType.TAX;
   const isIncomeActivity = isDividendActivity || isInterestActivity;
   const needsTax = isBuyOrSell || isIncomeActivity;
   const needsAssetSymbol =
-    SYMBOL_FIELD_ACTIVITY_TYPES.includes(activityType) || isStakingReward || isSecuritiesTransfer;
+    (SYMBOL_FIELD_ACTIVITY_TYPES.includes(activityType) && !isCashAdjustment) ||
+    isStakingReward ||
+    isSecuritiesTransfer;
   const needsQuantity =
     TRADE_ACTIVITY_TYPES.includes(activityType) ||
     isSecuritiesTransfer ||
-    isAdjustmentActivity ||
+    (isAdjustmentActivity && !isCashAdjustment) ||
     isAssetBackedIncome;
   const needsUnitPrice =
     TRADE_ACTIVITY_TYPES.includes(activityType) ||
@@ -197,6 +204,7 @@ export function MobileDetailsStep({
   const needsAmount =
     isBuyOrSell ||
     AMOUNT_FIELD_ACTIVITY_TYPES.includes(activityType) ||
+    isCashAdjustment ||
     (isCashTransfer && !needsInternalCashTransferAmounts);
   const { formatAmount } = useAmountFormatting();
   // One calculation feeds both the auto-fill effect below and the "use
@@ -343,6 +351,11 @@ export function MobileDetailsStep({
   // Filter destination accounts to exclude source account (for internal transfers)
   const toAccountOptions = filteredAccounts.filter((acc) => acc.value !== accountId);
 
+  useActivityCurrency(form, filteredAccounts, {
+    isEditing,
+    trackCurrencyChanges: !isTransfer || isExternal,
+  });
+
   const selectedAccount = filteredAccounts.find((acc) => acc.value === accountId);
   const destinationAccount = filteredAccounts.find((acc) => acc.value === toAccountId);
   const accountCurrency = selectedAccount?.currency;
@@ -359,7 +372,7 @@ export function MobileDetailsStep({
     ? `${selectedAccount.label} (${selectedAccount.currency})`
     : t("activity:select_account_placeholder");
 
-  // Backfill currency for preselected accounts when options arrive asynchronously.
+  // Internal transfers also need a source currency when a preselected account is backfilled.
   useEffect(() => {
     if (!accountId) return;
     const selected = filteredAccounts.find((account) => account.value === accountId);
@@ -368,13 +381,9 @@ export function MobileDetailsStep({
     const currentCurrency = currency?.trim();
     if (currentCurrency === selected.currency) return;
 
-    const shouldAutoSetCurrency = !getFieldState("currency").isDirty || !currentCurrency;
+    const shouldAutoSetCurrency = !currentCurrency && !getFieldState("currency").isDirty;
     if (!shouldAutoSetCurrency) return;
 
-    setValue("currency", selected.currency, {
-      shouldDirty: false,
-      shouldValidate: true,
-    });
     if (!isExternal) {
       setValue("sourceCurrency" as any, selected.currency, {
         shouldDirty: false,
@@ -1177,15 +1186,6 @@ export function MobileDetailsStep({
           onOpenChange={setAccountSheetOpen}
           onSelect={(accountValue) => {
             setValue("accountId", accountValue);
-            const selected = filteredAccounts.find((account) => account.value === accountValue);
-            const currentCurrency = getValues("currency")?.trim();
-            const shouldAutoSetCurrency = !getFieldState("currency").isDirty || !currentCurrency;
-            if (selected && shouldAutoSetCurrency) {
-              setValue("currency", selected.currency, {
-                shouldDirty: false,
-                shouldValidate: true,
-              });
-            }
             setAccountSheetOpen(false);
           }}
         />

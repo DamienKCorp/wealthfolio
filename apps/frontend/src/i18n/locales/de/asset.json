@@ -22,10 +22,21 @@
     "deleting": "Wird gelöscht..."
   },
   "refreshDialog": {
-    "title": "Verlauf aktualisieren",
-    "description_named": "Dadurch werden alle Anbieter-Kursnotierungen gelöscht und durch aktuelle Daten für {{name}} ersetzt. Manuelle Kursnotierungen bleiben erhalten. Fortfahren?",
-    "description_generic": "Dadurch werden alle Anbieter-Kursnotierungen gelöscht und durch aktuelle Daten ersetzt. Manuelle Kursnotierungen bleiben erhalten. Fortfahren?",
+    "title": "Gesamten Verlauf aktualisieren",
+    "description_named": "Neue Kurse für {{name}} werden mit vorhandenen Kursen zusammengeführt. Ältere, manuelle und Broker-Kurse bleiben erhalten. Fortfahren?",
+    "description_generic": "Neue Kurse werden mit vorhandenen Kursen zusammengeführt. Ältere, manuelle und Broker-Kurse bleiben erhalten. Fortfahren?",
     "refresh": "Aktualisieren"
+  },
+  "resetDialog": {
+    "globalDescription": "Anbieterkurse für alle geeigneten Vermögenswerte einschließlich Währungspaare ersetzen? Jeder Verlauf wird vor dem Ersetzen abgerufen und geprüft. Der Ersatz kann kürzer sein. Manuelle und Brokerkurse bleiben erhalten. Bei Fehlern bleibt der bisherige Verlauf erhalten; erfolgreiche Ersetzungen werden nicht rückgängig gemacht.",
+    "globalResult": "Ersetzt: {{succeeded}}. Fehlgeschlagen: {{failed}}. Übersprungen: {{skipped}}.",
+    "title": "Anbieterhistorie zurücksetzen",
+    "description": "Alle Anbieterpreise für {{name}} durch neu abgerufene Daten ersetzen? Die neue Historie kann kürzer sein. Manuelle und Broker-Kurse bleiben erhalten. Bei einem Abruf- oder Validierungsfehler bleibt die bestehende Historie erhalten.",
+    "confirm": "Anbieterhistorie zurücksetzen",
+    "resetting": "Wird zurückgesetzt…",
+    "success": "Anbieterhistorie ersetzt",
+    "complete": "Die Kurse wurden ersetzt. Die Neuberechnung des Portfolios wurde angefordert.",
+    "uncertain": "Die Antwort wurde unterbrochen; die Preise wurden möglicherweise bereits ersetzt. Prüfen Sie die Kurshistorie und laden Sie die Seite neu, bevor Sie erneut zurücksetzen."
   },
   "createSecurity": {
     "title": "Wertpapier hinzufügen",
@@ -154,7 +165,8 @@
     "maturity": "Fälligkeit",
     "type": "Typ",
     "strike": "Ausübungspreis",
-    "expiry": "Verfall"
+    "expiry": "Verfall",
+    "multiplier": "Multiplikator"
   },
   "profile": {
     "overview": "Übersicht",
@@ -177,7 +189,7 @@
     "record_transaction": "Transaktion erfassen",
     "valuation": "Bewertung",
     "update_price": "Preis aktualisieren",
-    "refresh_history": "Verlauf aktualisieren",
+    "refresh_history": "Gesamten Verlauf aktualisieren",
     "edit": "Bearbeiten",
     "update_value": "Wert aktualisieren",
     "edit_details": "Details bearbeiten",
@@ -265,6 +277,18 @@
     "exchange": "Börse",
     "select_exchange": "Börse auswählen",
     "search_exchanges": "Börsen suchen...",
+    "contract_multiplier": "Kontraktmultiplikator",
+    "contract_multiplier_hint": "Jeder Kontrakt entspricht so vielen Basiswerteinheiten. Leer lassen für den Standardwert {{default}}.",
+    "maturity_date": "Fälligkeitsdatum",
+    "coupon_rate": "Kuponsatz (%)",
+    "coupon_frequency": "Kuponfrequenz",
+    "select_frequency": "Frequenz auswählen",
+    "couponFrequency": {
+      "ANNUAL": "Jährlich",
+      "SEMI_ANNUAL": "Halbjährlich",
+      "QUARTERLY": "Vierteljährlich",
+      "ZERO": "Nullkupon"
+    },
     "saving": "Wird gespeichert...",
     "saving_short": "Wird gespeichert",
     "save_changes": "Änderungen speichern",
@@ -712,5 +736,34 @@
     "modified_other": "{{count}} geändert",
     "to_delete_one": "{{count}} zu löschen",
     "to_delete_other": "{{count}} zu löschen"
+  },
+  "logo": {
+    "change": "Logo ändern",
+    "title": "Logo der Anlage",
+    "badge_default": "Standard",
+    "badge_custom": "Benutzerdefiniert",
+    "updated_at": "Aktualisiert am {{date}}",
+    "dropzone_cta": "Bild auswählen",
+    "dropzone_or_drop": "oder hierher ziehen und ablegen",
+    "dropzone_hint": "PNG, JPEG, WebP oder SVG · wird auf 256×256 PNG skaliert",
+    "processing": "Bild wird vorbereitet…",
+    "preview_title": "Vorschau",
+    "preview_new": "Neues Logo",
+    "preview_current": "Aktuelles Logo",
+    "preview_card": "Positionskarte",
+    "preview_table": "Positionstabelle",
+    "preview_list": "Aktivitätenliste",
+    "preview_meta": "{{width}}×{{height}} · {{size}} (statt {{original}})",
+    "choose_different": "Anderes Bild auswählen",
+    "save": "Logo speichern",
+    "reset": "Auf Standard zurücksetzen",
+    "saved": "Logo gespeichert.",
+    "reset_done": "Logo auf Standard zurückgesetzt.",
+    "error_unsupported_type": "Nicht unterstützte Datei. Verwenden Sie ein PNG-, JPEG-, WebP- oder SVG-Bild.",
+    "error_too_large_input": "Die Datei ist zu groß. Wählen Sie ein Bild unter 10 MB.",
+    "error_decode_failed": "Die Datei konnte nicht als Bild gelesen werden.",
+    "error_encode_failed": "Das Bild konnte nicht in PNG konvertiert werden.",
+    "error_too_large_output": "Das Bild ist zu detailliert für 150 KB. Versuchen Sie ein einfacheres oder kleineres Bild.",
+    "error_save_failed": "Das Logo konnte nicht gespeichert werden."
   }
 }

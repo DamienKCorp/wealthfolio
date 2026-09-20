@@ -33,6 +33,7 @@ const DEBOUNCE_DURATION: Duration = Duration::from_millis(1000);
 
 /// Dependencies needed by the queue worker for processing events.
 pub struct QueueWorkerDeps {
+    pub settings_service: Arc<dyn wealthfolio_core::settings::SettingsServiceTrait>,
     pub asset_service: Arc<dyn AssetServiceTrait + Send + Sync>,
     pub connect_sync_service: Arc<dyn BrokerSyncServiceTrait + Send + Sync>,
     pub event_bus: EventBus,
@@ -141,6 +142,25 @@ pub async fn event_queue_worker(
     }
 }
 
+fn read_setting(
+    deps: &QueueWorkerDeps,
+    lock: &RwLock<String>,
+    name: &'static str,
+) -> Option<String> {
+    match crate::main_lib::read_runtime_setting(lock, name) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::error!("Background operation stopped: {error}");
+            deps.event_bus
+                .publish(crate::events::ServerEvent::with_payload(
+                    crate::events::PORTFOLIO_UPDATE_ERROR,
+                    serde_json::json!(error.to_string()),
+                ));
+            None
+        }
+    }
+}
+
 /// Processes a batch of domain events.
 async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>) {
     tracing::info!("Processing batch of {} domain event(s)", events.len());
@@ -227,8 +247,35 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
     }
 
     // 2. Plan and trigger portfolio job
-    let timezone = deps.timezone.read().unwrap().clone();
-    if let Some(config) = plan_portfolio_job(events, &timezone) {
+    let Some(timezone) = read_setting(&deps, &deps.timezone, "Timezone") else {
+        return;
+    };
+    if let Some(mut config) = plan_portfolio_job(events, &timezone) {
+        let prices_changed = events
+            .iter()
+            .any(|event| matches!(event, DomainEvent::PriceHistoryChanged));
+        if prices_changed {
+            deps.health_service.clear_cache().await;
+            use wealthfolio_core::accounts::AccountServiceTrait;
+            // Saved prices affect archived account history and the in-memory FX cache too.
+            let accounts = deps
+                .fx_service
+                .initialize()
+                .and_then(|()| deps.account_service.get_all_accounts());
+            match accounts {
+                Ok(accounts) => {
+                    config.account_ids = Some(accounts.into_iter().map(|a| a.id).collect())
+                }
+                Err(error) => {
+                    deps.event_bus
+                        .publish(crate::events::ServerEvent::with_payload(
+                            crate::events::PORTFOLIO_UPDATE_ERROR,
+                            serde_json::json!(error.to_string()),
+                        ));
+                    return;
+                }
+            }
+        }
         tracing::info!(
             "Triggering portfolio job for accounts: {:?}, market_sync: {:?}",
             config.account_ids,
@@ -260,6 +307,7 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
         let event_bus = deps.event_bus.clone();
         let secret_store = deps.secret_store.clone();
         let token_lifecycle = deps.token_lifecycle.clone();
+        let settings_service = deps.settings_service.clone();
         let broker_sync_running = deps.broker_sync_running.clone();
 
         tokio::spawn(async move {
@@ -271,6 +319,7 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
             };
 
             match perform_broker_sync(
+                settings_service,
                 connect_sync_service,
                 event_bus,
                 secret_store,
@@ -316,9 +365,10 @@ async fn run_portfolio_job(
     };
 
     let event_bus = deps.event_bus.clone();
-    let today = user_today(parse_user_timezone_or_default(
-        &deps.timezone.read().unwrap(),
-    ));
+    let Some(timezone) = read_setting(&deps, &deps.timezone, "Timezone") else {
+        return;
+    };
+    let today = user_today(parse_user_timezone_or_default(&timezone));
     let safe_since_date = config
         .since_date
         .filter(|date| !snapshot_date_requires_remediation(*date, today));
@@ -414,9 +464,14 @@ async fn run_portfolio_job(
             }
             Err(err) => {
                 let err_msg = err.to_string();
-                tracing::error!("Market data sync failed: {}", err_msg);
+                tracing::error!(
+                    "Market data sync failed: {}. Recalculating with cached quotes.",
+                    err_msg
+                );
                 event_bus.publish(ServerEvent::with_payload(MARKET_SYNC_ERROR, json!(err_msg)));
-                return;
+                // Fall through to the recalculation below. The change that
+                // queued this job still has to reach the portfolio; fetching
+                // quotes is a separate concern and must not block it.
             }
         }
     } else {
@@ -493,6 +548,7 @@ async fn run_portfolio_job(
         }
     }
 
+    deps.health_service.clear_cache().await;
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
 }
 
@@ -571,8 +627,12 @@ async fn refresh_all_goal_summaries(deps: Arc<QueueWorkerDeps>) {
         }
     };
     let account_ids: Vec<String> = accounts.into_iter().map(|account| account.id).collect();
-    let base_currency = deps.base_currency.read().unwrap().clone();
-    let timezone = deps.timezone.read().unwrap().clone();
+    let Some(base_currency) = read_setting(&deps, &deps.base_currency, "Base currency") else {
+        return;
+    };
+    let Some(timezone) = read_setting(&deps, &deps.timezone, "Timezone") else {
+        return;
+    };
     let latest_snapshot_cutoff = user_today(parse_user_timezone_or_default(&timezone));
     let service = CurrentAccountValuationService::new(
         deps.account_service.as_ref(),
@@ -703,9 +763,16 @@ impl wealthfolio_connect::SyncProgressReporter for EventBusProgressReporter {
 
 /// Mint a fresh access token using the stored refresh token.
 async fn mint_access_token(
+    settings: &dyn wealthfolio_core::settings::SettingsServiceTrait,
     secret_store: &Arc<dyn SecretStore>,
     token_lifecycle: &TokenLifecycleState,
 ) -> Result<String, String> {
+    if settings
+        .requires_cloud_reconnect()
+        .map_err(|e| e.to_string())?
+    {
+        return Err("Reconnect Wealthfolio Connect after restoring this backup.".into());
+    }
     let config = token_lifecycle_config();
     ensure_valid_access_token(secret_store.as_ref(), token_lifecycle, config.as_ref())
         .await
@@ -716,6 +783,7 @@ async fn mint_access_token(
 /// Uses the centralized SyncOrchestrator for full pagination support.
 /// Asset enrichment is handled automatically via domain events (AssetsCreated).
 async fn perform_broker_sync(
+    settings: Arc<dyn wealthfolio_core::settings::SettingsServiceTrait>,
     connect_sync_service: Arc<dyn BrokerSyncServiceTrait + Send + Sync>,
     event_bus: EventBus,
     secret_store: Arc<dyn SecretStore>,
@@ -728,7 +796,8 @@ async fn perform_broker_sync(
     }
 
     // Create API client with fresh access token
-    let token = mint_access_token(&secret_store, token_lifecycle.as_ref()).await?;
+    let token =
+        mint_access_token(settings.as_ref(), &secret_store, token_lifecycle.as_ref()).await?;
     let client = ConnectApiClient::new(&cloud_api_base_url(), &token).map_err(|e| e.to_string())?;
 
     // Check plan entitlement before syncing

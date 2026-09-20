@@ -52,7 +52,8 @@
       "compare_weights": "Compara los pesos actuales con tu cartera prevista.",
       "set_target_allocation": "Establecer asignación objetivo",
       "outside_range_one": "{{count}} fuera de rango · mayor diferencia {{gap}}",
-      "outside_range_other": "{{count}} fuera de rango · mayor diferencia {{gap}}"
+      "outside_range_other": "{{count}} fuera de rango · mayor diferencia {{gap}}",
+      "outside_range_many": "{{count}} fuera de rango · mayor diferencia {{gap}}"
     },
     "value_strip": {
       "portfolio_value": "Valor de la cartera",
@@ -64,8 +65,11 @@
       "available_cash": "Efectivo disponible",
       "holdings_count_one": "{{count}} posición",
       "holdings_count_other": "{{count}} posiciones",
+      "holdings_count_many": "{{count}} posiciones",
       "accounts_count_one": "{{count}} cuenta",
-      "accounts_count_other": "{{count}} cuentas"
+      "accounts_count_other": "{{count}} cuentas",
+      "accounts_count_many": "{{count}} cuentas",
+      "pnl_current_holdings": "Posiciones actuales"
     }
   },
   "networth": {
@@ -79,6 +83,7 @@
     "update_valuations": "Actualiza tus valoraciones",
     "assets_count_one": "{{count}} activo",
     "assets_count_other": "{{count}} activos",
+    "assets_count_many": "{{count}} activos",
     "not_updated_over_90_days": "No se ha actualizado en más de 90 días.",
     "chart": {
       "net_worth": "Patrimonio neto",
@@ -116,6 +121,7 @@
       "monthly_pace": "Ritmo mensual",
       "over_months_one": "en {{count}} mes",
       "over_months_other": "en {{count}} meses",
+      "over_months_many": "en {{count}} meses",
       "trailing_pace": " · {{multiple}}× del ritmo de los últimos 12 meses",
       "drivers_of_change": "Factores del cambio",
       "market_returns": "Rentabilidades del mercado",
@@ -124,6 +130,37 @@
       "per_month": "/mes"
     },
     "days_ago_one": "hace {{count}} d",
-    "days_ago_other": "hace {{count}} d"
+    "days_ago_other": "hace {{count}} d",
+    "days_ago_many": "hace {{count}} d"
+  },
+  "highlights": {
+    "movers": "Mayores movimientos",
+    "concentration": "Concentración",
+    "daily": "Variación diaria · posiciones actuales",
+    "rank_by": "Ordenar movimientos diarios por",
+    "gainers": "Mayores subidas",
+    "losers": "Mayores bajadas",
+    "no_moves": "No hay movimientos con datos disponibles.",
+    "portfolio_share": "Proporción del valor de la cartera, incluido el efectivo",
+    "largest": "Mayor posición",
+    "top_five": "Cinco mayores posiciones",
+    "concentration_unavailable": "La concentración requiere posiciones con valor positivo y una cartera sin posiciones cortas."
+  },
+  "customize": {
+    "edit": "Personalizar",
+    "widgets": "Widgets",
+    "reset": "Restablecer diseño",
+    "cancel": "Cancelar",
+    "save": "Guardar diseño",
+    "saving": "Guardando…",
+    "hint": "Arrastra los widgets desde sus controles de arrastre o ajusta su ancho desde el borde derecho.",
+    "description": "Elige qué widgets mostrar. Usa las flechas para cambiar su orden, también en el móvil.",
+    "value": "Resumen de la cartera",
+    "breakdown": "Desglose",
+    "move_up": "Mover {{widget}} hacia arriba",
+    "move_down": "Mover {{widget}} hacia abajo",
+    "hide": "Ocultar {{widget}}",
+    "drag": "Arrastrar {{widget}}",
+    "empty": "No hay widgets seleccionados. Personaliza esta página para añadir widgets."
   }
 }

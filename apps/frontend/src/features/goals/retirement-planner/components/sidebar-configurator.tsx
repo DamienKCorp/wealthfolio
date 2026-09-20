@@ -1,8 +1,11 @@
+import { useSettingsContext } from "@/lib/settings-provider";
+import { formatZonedDateKey } from "@/features/spending/lib/timezone";
+import { parseLocalDate } from "@/lib/utils";
 import { GoalFundingEditor } from "@/features/goals/components/goal-funding-editor";
 import {
   DEFAULT_RETURN_SLIDER_MAX,
   RATE_SLIDER_INCREMENT,
-  highReturnWarning,
+  HIGH_RETURN_WARNING_THRESHOLD,
 } from "@/features/goals/components/goal-lever-constants";
 import {
   GoalLeverRow as LeverRow,
@@ -24,7 +27,7 @@ import {
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
 import type { TFunction } from "i18next";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_DC_PAYOUT_ESTIMATE_RATE } from "../lib/constants";
 import {
@@ -119,6 +122,7 @@ function SidebarMonthlyRow({
   currency: string;
 }) {
   const formatting = useAmountFormatting();
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between gap-3 py-3 first:pt-1 last:pb-1">
       <div className="min-w-0">
@@ -129,7 +133,7 @@ function SidebarMonthlyRow({
         <span className="text-foreground text-sm font-semibold">
           {formatting.formatAmount(amount, currency)}
         </span>
-        <span className="text-muted-foreground text-xs">/mo</span>
+        <span className="text-muted-foreground text-xs">{t("goals:save_up.per_month_suffix")}</span>
       </div>
     </div>
   );
@@ -148,7 +152,7 @@ function SidebarTotalRow({ amount, currency }: { amount: number; currency: strin
         <span className="text-foreground text-sm font-semibold">
           {formatting.formatAmount(amount, currency)}
         </span>
-        <span className="text-muted-foreground text-xs">/mo</span>
+        <span className="text-muted-foreground text-xs">{t("goals:save_up.per_month_suffix")}</span>
       </div>
     </div>
   );
@@ -160,6 +164,12 @@ function pctOfTotal(
   formatting: Pick<ReturnType<typeof useNumberFormatting>, "formatPercent">,
 ) {
   return formatting.formatPercent(total > 0 ? value / total : 0, { digits: 0 });
+}
+
+function highReturnWarning(value: number, t: TFunction) {
+  return value > HIGH_RETURN_WARNING_THRESHOLD
+    ? t("goals:sidebar.warnings.high_return")
+    : undefined;
 }
 
 function highInflationWarning(value: number, t: TFunction) {
@@ -396,6 +406,9 @@ export function SidebarConfigurator({
   goalId?: string;
   dcLinkedAccountIds?: string[];
 }) {
+  const { settings } = useSettingsContext();
+  const todayISO = formatZonedDateKey(new Date(), settings?.timezone);
+  const today = useMemo(() => parseLocalDate(todayISO), [todayISO]);
   const amountFormatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
 
@@ -414,12 +427,12 @@ export function SidebarConfigurator({
   }, []);
 
   const saveDraft = useCallback(() => {
-    onSavePlan?.(normalizeDashboardRetirementPlan(draft), draftMode);
+    onSavePlan?.(normalizeDashboardRetirementPlan(draft, today), draftMode);
     setDirty(false);
     setEditingSection(null);
     setExpandedExpenseId(null);
     setExpandedIncomeId(null);
-  }, [draft, draftMode, onSavePlan]);
+  }, [draft, draftMode, onSavePlan, today]);
 
   const cancelEdit = useCallback(() => {
     setDraft(structuredClone(plan));
@@ -542,11 +555,11 @@ export function SidebarConfigurator({
     (draft.tax?.taxFreeWithdrawalRate ?? 0) === 0;
 
   const birthYearMonth =
-    draft.personal.birthYearMonth ?? inferBirthYearMonthFromAge(draft.personal.currentAge);
-  const maxBirthYearMonth = inferBirthYearMonthFromAge(0);
+    draft.personal.birthYearMonth ?? inferBirthYearMonthFromAge(draft.personal.currentAge, today);
+  const maxBirthYearMonth = inferBirthYearMonthFromAge(0, today);
   const updateBirthYearMonth = (nextBirthYearMonth: string) => {
     if (!nextBirthYearMonth) return;
-    const nextAge = ageFromBirthYearMonth(nextBirthYearMonth) ?? draft.personal.currentAge;
+    const nextAge = ageFromBirthYearMonth(nextBirthYearMonth, today) ?? draft.personal.currentAge;
     update((d) => {
       const targetRetirementAge = Math.max(nextAge + 1, d.personal.targetRetirementAge);
       const planningHorizonAge = Math.max(targetRetirementAge + 1, d.personal.planningHorizonAge);
@@ -738,7 +751,7 @@ export function SidebarConfigurator({
               step={0.001}
               suffix="%"
               format={(v) => (v * 100).toFixed(1)}
-              warning={highReturnWarning(draft.investment.preRetirementAnnualReturn)}
+              warning={highReturnWarning(draft.investment.preRetirementAnnualReturn, t)}
             />
             <LeverRow
               label={t("goals:sidebar.assumptions.return_during_retirement")}
@@ -756,7 +769,7 @@ export function SidebarConfigurator({
               step={0.001}
               suffix="%"
               format={(v) => (v * 100).toFixed(1)}
-              warning={highReturnWarning(draft.investment.retirementAnnualReturn)}
+              warning={highReturnWarning(draft.investment.retirementAnnualReturn, t)}
             />
             <LeverRow
               label={t("goals:sidebar.assumptions.annual_investment_fee")}
@@ -903,7 +916,9 @@ export function SidebarConfigurator({
                       </span>
                       <span className="text-foreground shrink-0 text-sm font-semibold tabular-nums">
                         {amountFormatting.formatAmount(item.monthlyAmount, currency)}
-                        <span className="text-muted-foreground text-xs font-normal">/mo</span>
+                        <span className="text-muted-foreground text-xs font-normal">
+                          {t("goals:save_up.per_month_suffix")}
+                        </span>
                       </span>
                     </button>
                     <button
@@ -935,7 +950,7 @@ export function SidebarConfigurator({
                         max={sliderMaxFor(item.monthlyAmount, 20000, 5000)}
                         step={100}
                         prefix={moneyPrefix}
-                        suffix="/mo"
+                        suffix={t("goals:save_up.per_month_suffix")}
                         format={(v) => String(Math.round(v))}
                       />
                       <div className="grid grid-cols-2 gap-3">
@@ -1169,7 +1184,9 @@ export function SidebarConfigurator({
                       </span>
                       <span className="text-foreground shrink-0 text-sm font-semibold tabular-nums">
                         {amountFormatting.formatAmount(amount, currency)}
-                        <span className="text-muted-foreground text-xs font-normal">/mo</span>
+                        <span className="text-muted-foreground text-xs font-normal">
+                          {t("goals:save_up.per_month_suffix")}
+                        </span>
                       </span>
                     </button>
                     <button
@@ -1232,7 +1249,7 @@ export function SidebarConfigurator({
                             max={sliderMaxFor(amount, 10000, 2500)}
                             step={50}
                             prefix={moneyPrefix}
-                            suffix="/mo"
+                            suffix={t("goals:save_up.per_month_suffix")}
                             format={(v) => String(Math.round(v))}
                           />
                         )}
@@ -1258,7 +1275,7 @@ export function SidebarConfigurator({
                               max={sliderMaxFor(s.monthlyContribution ?? 0, 10000, 2500)}
                               step={50}
                               prefix={moneyPrefix}
-                              suffix="/mo"
+                              suffix={t("goals:save_up.per_month_suffix")}
                               format={(v) => String(Math.round(v))}
                             />
                             <LeverRow
@@ -1278,6 +1295,7 @@ export function SidebarConfigurator({
                               format={(v) => (v * 100).toFixed(1)}
                               warning={highReturnWarning(
                                 s.accumulationReturn ?? planAccumulationReturn(draft),
+                                t,
                               )}
                             />
                             <LeverRow
@@ -1332,7 +1350,7 @@ export function SidebarConfigurator({
                                 step={0.001}
                                 suffix="%"
                                 format={(v) => (v * 100).toFixed(1)}
-                                warning={highReturnWarning(payoutPhaseReturn(s, draft))}
+                                warning={highReturnWarning(payoutPhaseReturn(s, draft), t)}
                               />
                             )}
                             {s.startAge <= draft.personal.currentAge && (
@@ -1345,7 +1363,7 @@ export function SidebarConfigurator({
                                 max={sliderMaxFor(s.monthlyAmount ?? amount, 10000, 2500)}
                                 step={50}
                                 prefix={moneyPrefix}
-                                suffix="/mo"
+                                suffix={t("goals:save_up.per_month_suffix")}
                                 format={(v) => String(Math.round(v))}
                               />
                             )}
@@ -1519,7 +1537,7 @@ export function SidebarConfigurator({
               step={0.001}
               suffix="%"
               format={(v) => (v * 100).toFixed(1)}
-              warning={highReturnWarning(draft.investment.preRetirementAnnualReturn)}
+              warning={highReturnWarning(draft.investment.preRetirementAnnualReturn, t)}
             />
             <LeverRow
               label={t("goals:sidebar.assumptions.return_during_retirement")}
@@ -1536,7 +1554,7 @@ export function SidebarConfigurator({
               step={0.001}
               suffix="%"
               format={(v) => (v * 100).toFixed(1)}
-              warning={highReturnWarning(draft.investment.retirementAnnualReturn)}
+              warning={highReturnWarning(draft.investment.retirementAnnualReturn, t)}
             />
             <LeverRow
               label={t("goals:sidebar.assumptions.annual_investment_fee")}

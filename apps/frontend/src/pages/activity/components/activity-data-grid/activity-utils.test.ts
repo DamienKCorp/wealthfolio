@@ -55,6 +55,67 @@ const createMockTransaction = (overrides: Partial<LocalTransaction> = {}): Local
 });
 
 describe("activity-utils", () => {
+  it("clears the old rate when the transaction currency changes", () => {
+    const updated = applyTransactionUpdate({
+      transaction: createMockTransaction({ currency: "EUR", fxRate: "1.2" }),
+      field: "currency",
+      value: "GBP",
+      accountLookup: new Map(),
+      assetCurrencyLookup: new Map(),
+      resolveTransactionCurrency: createCurrencyResolver(new Map(), "USD"),
+      fallbackCurrency: "USD",
+    });
+    expect(updated.currency).toBe("GBP");
+    expect(updated.fxRate).toBeNull();
+  });
+
+  it.each(["USD", "CAD"])("serializes an invalidated FX rate for %s accounts", (currency) => {
+    const resolver = createCurrencyResolver(new Map(), "USD");
+    const updated = applyTransactionUpdate({
+      transaction: createMockTransaction({ currency: "EUR", fxRate: "1.2" }),
+      field: "accountId",
+      value: "account-2",
+      accountLookup: new Map([["account-2", createMockAccount({ id: "account-2", currency })]]),
+      assetCurrencyLookup: new Map(),
+      resolveTransactionCurrency: resolver,
+      fallbackCurrency: "USD",
+    });
+    const payload = buildSavePayload(
+      [updated],
+      new Set([updated.id]),
+      new Set(),
+      resolver,
+      new Map(),
+      new Map(),
+      "USD",
+    );
+    expect(JSON.parse(JSON.stringify(payload.updates[0]))).toMatchObject({
+      currency: "EUR",
+      fxRate: currency === "USD" ? "1.2" : null,
+    });
+  });
+  it.each([true, false])("handles account changes for a row with isNew=%s", (isNew) => {
+    const updated = applyTransactionUpdate({
+      transaction: createMockTransaction({
+        activityType: ActivityType.FEE,
+        currency: "EUR",
+        amount: "5",
+        isNew,
+      }),
+      field: "accountId",
+      value: "account-2",
+      accountLookup: new Map([
+        ["account-2", createMockAccount({ id: "account-2", name: "Other USD account" })],
+      ]),
+      assetCurrencyLookup: new Map(),
+      resolveTransactionCurrency: createCurrencyResolver(new Map(), "USD"),
+      fallbackCurrency: "USD",
+    });
+    expect(updated.accountId).toBe("account-2");
+    expect(updated.accountCurrency).toBe("USD");
+    expect(updated.amount).toBe("5");
+    expect(updated.currency).toBe(isNew ? "USD" : "EUR");
+  });
   describe("valuesAreEqual", () => {
     describe("numeric fields", () => {
       it("should compare numbers correctly", () => {
@@ -957,6 +1018,56 @@ describe("activity-utils", () => {
       // Backend now generates CASH:{currency} IDs for cash activities
       // Frontend doesn't set symbol for cash activities
       expect(result.updates[0].asset).toBeUndefined();
+    });
+
+    it("preserves a symbol-backed adjustment asset on unrelated edits", () => {
+      const transactions: LocalTransaction[] = [
+        createMockTransaction({
+          id: "adjustment-1",
+          activityType: ActivityType.ADJUSTMENT,
+          assetId: "asset-aapl",
+          assetSymbol: "AAPL",
+          _originalAssetId: "asset-aapl",
+          _originalAssetSymbol: "AAPL",
+        }),
+      ];
+
+      const result = buildSavePayload(
+        transactions,
+        new Set(["adjustment-1"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      expect(result.updates[0].asset).toEqual(expect.objectContaining({ id: "asset-aapl" }));
+    });
+
+    it("explicitly clears an adjustment asset when its symbol is removed", () => {
+      const transactions: LocalTransaction[] = [
+        createMockTransaction({
+          id: "adjustment-1",
+          activityType: ActivityType.ADJUSTMENT,
+          assetId: "",
+          assetSymbol: "",
+          _originalAssetId: "asset-aapl",
+          _originalAssetSymbol: "AAPL",
+        }),
+      ];
+
+      const result = buildSavePayload(
+        transactions,
+        new Set(["adjustment-1"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      expect(result.updates[0].asset).toEqual({});
     });
 
     it("should not force account currency for securities transfers", () => {

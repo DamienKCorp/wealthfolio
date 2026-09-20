@@ -36,6 +36,11 @@
     "transactionCount_other": "取引{{count}}件",
     "editCategoryTitle": "カテゴリを編集",
     "deleteCategoryTitle": "カテゴリを削除",
+    "excludeLabel": "支出から除外",
+    "excludeDescription": "合計、グラフ、インサイト、予算に含めません",
+    "excludeDisabledParent": "親カテゴリが除外されているため除外されています",
+    "excludedTooltip": "支出から除外済み",
+    "excludedWithParent": "{{name}} と一緒に除外",
     "categoryActions": "カテゴリの操作",
     "deleteTitle": "カテゴリを削除",
     "deleteConfirm": "「{{name}}」を削除してもよろしいですか?",
@@ -60,8 +65,8 @@
     "activityDividend": "配当",
     "activityFee": "手数料",
     "activityTax": "税金",
-    "activityTransferIn": "振替入金",
-    "activityTransferOut": "振替出金",
+    "activityTransferIn": "振替受入",
+    "activityTransferOut": "振替払出",
     "fromPreset": "{{name}}プリセットから",
     "fromPresetEdited": "{{name}}プリセットから(編集済み)",
     "priority": "優先度{{value}}",
@@ -195,9 +200,9 @@
     "statusNeedsReview": "要確認",
     "statusUncategorized": "未分類",
     "statusCategorized": "分類済み",
-    "countLabel": "取引 {{visible}} / {{total}}件",
-    "countLabel_one": "取引 {{visible}} / {{total}}件",
-    "countLabel_other": "取引 {{visible}} / {{total}}件",
+    "countLabel": "取引 {{visible}}/{{total}}件",
+    "countLabel_one": "取引 {{visible}}/{{total}}件",
+    "countLabel_other": "取引 {{visible}}/{{total}}件",
     "countZero": "取引0件",
     "category": "カテゴリ",
     "subcategory": "サブカテゴリ",
@@ -205,7 +210,9 @@
     "filterTransactions": "取引を絞り込む",
     "clearAll": "すべてクリア",
     "done": "完了",
-    "refreshing": "更新中"
+    "refreshing": "更新中",
+    "selectedNet": "選択の収支",
+    "filteredNet": "絞り込みの収支"
   },
   "period": {
     "thisMonth": "今月",
@@ -215,7 +222,13 @@
     "viewingMonth": "{{label}}を表示中。クリックで変更",
     "pickMonth": "特定の月を選択",
     "selectMonth": "月を選択",
-    "clearMonth": "月の選択をクリア"
+    "clearMonth": "月の選択をクリア",
+    "chooseMonth": "月を選択",
+    "selectDates": "日付を選択",
+    "startDate": "開始日",
+    "chooseCustomDates": "任意の日付を選択",
+    "invalidRange": "終了日は開始日以降にしてください",
+    "endDate": "終了日"
   },
   "presets": {
     "loading": "プリセットを読み込み中…",
@@ -359,9 +372,8 @@
     "spent": "支出",
     "allSubcategories": "すべてのサブカテゴリ",
     "tx": "件数",
-    "outflowsCount": "出金{{count}}件",
     "avgPerTx": "1件あたり平均",
-    "outflowsOnly": "出金のみ",
+    "acrossAllTx": "全取引が対象",
     "dailyPace": "1日あたりのペース",
     "inThisPeriod": "この期間",
     "subcategoryMix": "サブカテゴリの内訳",
@@ -373,7 +385,6 @@
     "noTransactions": "この期間に取引はありません。",
     "loadMore": "さらに{{count}}件読み込む",
     "openInTransactions": "取引一覧で開く",
-    "outflowsCount_other": "出金{{count}}件",
     "totalCount_other": "合計{{count}}件",
     "loadMore_other": "さらに{{count}}件読み込む"
   },
@@ -388,7 +399,8 @@
     "largest": "最大",
     "noSpending": "この枠に支出はありません。",
     "outlier": "外れ値",
-    "weekOf": "{{date}}の週"
+    "weekOf": "{{date}}の週",
+    "customSubtitle": "選択した期間の取引"
   },
   "split": {
     "title": "取引を分割",
@@ -536,7 +548,11 @@
     "brighter": "明るい",
     "moreSpend": "= 支出が多い。",
     "less": "少ない",
-    "more": "多い"
+    "more": "多い",
+    "customSubtitleShort": "選択した期間",
+    "customNoActivity": "選択した期間に現金の取引はありません。",
+    "customLegendIntro": "各セルは、選択した期間における曜日ごとの1時間を表します。",
+    "customSubtitle": "選択した期間 · 曜日と時間帯ごとの支出の集中度。"
   },
   "eventDetail": {
     "previousEvent": "前のイベント",
@@ -707,8 +723,11 @@
     "sortByLabel": "{{label}}で並び替え",
     "categoriesShown_one": "{{total}}カテゴリ中{{shown}}件を表示",
     "categoriesShown_other": "{{total}}カテゴリ中{{shown}}件を表示",
+    "excludedInSettings_one": "{{count}}件を設定で除外",
+    "excludedInSettings_other": "{{count}}件を設定で除外",
     "openTransactions": "取引一覧を開く →",
-    "moreCount_other": "他{{count}}件"
+    "moreCount_other": "他{{count}}件",
+    "vsRange": "{{from}} – {{to}} と比較"
   },
   "budgetChart": {
     "overBudget": "予算超過",
@@ -815,9 +834,12 @@
     "deselectAllVisible": "表示中の取引の選択をすべて解除",
     "selectAllVisible": "表示中の取引をすべて選択",
     "nameNotes": "名前 / メモ",
-    "loading": "読み込み中…",
-    "loadMore": "さらに読み込む(残り{{count}}件)",
-    "loadMore_other": "さらに読み込む(残り{{count}}件)"
+    "time": "時刻",
+    "net": "収支",
+    "dayCount_one": "取引{{count}}件",
+    "dayCount_other": "取引{{count}}件",
+    "selectDay": "{{date}}の取引をすべて選択",
+    "deselectDay": "{{date}}の取引の選択をすべて解除"
   },
   "tabContent": {
     "stageWhereLabel": "現状",
@@ -841,6 +863,8 @@
     "automateMatching": "繰り返し利用する店舗のマッチングを自動化",
     "loadError": "支出データを読み込めませんでした。",
     "spentLabel": "支出",
+    "excludedCategoriesHint_one": "{{count}}件のカテゴリを除外",
+    "excludedCategoriesHint_other": "{{count}}件のカテゴリを除外",
     "noSpendingInPeriod": "この期間に支出はありません",
     "whereItWent": "支出の内訳",
     "whereItWentView": "支出の内訳ビュー",

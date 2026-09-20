@@ -1,3 +1,4 @@
+import { getActivityCurrencyPatch } from "../../activity-currency";
 import {
   isAssetBackedIncomeSubtype,
   isAssetIdentityRequired,
@@ -407,15 +408,34 @@ export function applyTransactionUpdate(params: TransactionUpdateParams): LocalTr
     updated = { ...updated, accountId: newAccountId };
     const account = accountLookup.get(newAccountId);
     if (account) {
-      updated = { ...updated, accountName: account.name, accountCurrency: account.currency };
-
-      // Auto-fill currency: account currency (users enter prices in account currency)
-      updated = { ...updated, currency: account.currency };
+      updated = {
+        ...updated,
+        ...getActivityCurrencyPatch({
+          currency: updated.currency,
+          previousCurrency: updated.currency,
+          accountCurrency: account.currency,
+          previousAccountCurrency: updated.accountCurrency,
+          useAccountDefault: Boolean(updated.isNew || !updated.currency),
+        }),
+        accountName: account.name,
+        accountCurrency: account.currency,
+      };
     }
     updated = applyCashDefaults(updated, resolveTransactionCurrency, fallbackCurrency);
     updated = applySplitDefaults(updated);
   } else if (field === "currency") {
-    updated = { ...updated, currency: typeof value === "string" ? value : updated.currency };
+    const currency = typeof value === "string" ? value : updated.currency;
+    updated = {
+      ...updated,
+      currency,
+      ...getActivityCurrencyPatch({
+        currency,
+        previousCurrency: updated.currency,
+        accountCurrency: updated.accountCurrency,
+        previousAccountCurrency: updated.accountCurrency,
+        useAccountDefault: false,
+      }),
+    };
     updated = applyCashDefaults(updated, resolveTransactionCurrency, fallbackCurrency);
     updated = applySplitDefaults(updated);
   } else if (field === "comment") {
@@ -543,9 +563,13 @@ export function buildSavePayload(
       transaction.activityType === ActivityType.TRANSFER_OUT;
     const supportsBoundary = isTransfer || transaction.activityType === ActivityType.CREDIT;
     const assetSymbol = (transaction.assetSymbol || "").trim();
+    const isSymbolBackedAdjustment =
+      transaction.activityType === ActivityType.ADJUSTMENT && Boolean(assetSymbol);
     const isCash = isTransfer
       ? isCashTransfer(transaction.activityType, assetSymbol) || !assetSymbol
-      : isAlwaysCashActivity(transaction.activityType, transaction.subtype);
+      : transaction.activityType === ActivityType.ADJUSTMENT
+        ? !isSymbolBackedAdjustment
+        : isAlwaysCashActivity(transaction.activityType, transaction.subtype);
     // For assets not in our lookup (new assets), send undefined currency to let the backend
     // derive it from the asset and properly register the FX pair if needed.
     // Only use account currency fallback for cash activities where the currency is deterministic.
@@ -666,6 +690,10 @@ export function buildSavePayload(
             ? undefined
             : transaction.needsReview,
       };
+
+      if (isCash && transaction._originalAssetId) {
+        updatePayload.asset = {};
+      }
 
       if (!isCash) {
         const currentSymbol = (transaction.assetSymbol || "").trim().toUpperCase();
