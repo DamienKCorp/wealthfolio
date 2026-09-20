@@ -529,6 +529,8 @@ pub fn run() {
             commands::market_data::resolve_symbol_quote,
             commands::market_data::synch_quotes,
             commands::market_data::sync_market_data,
+            commands::market_data::reset_provider_history,
+            commands::market_data::reset_all_provider_history,
             commands::market_data::update_quote,
             commands::market_data::delete_quote,
             commands::market_data::get_quote_history,

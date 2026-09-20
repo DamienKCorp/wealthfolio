@@ -1,5 +1,6 @@
 use crate::database::DatabaseRuntime;
 use std::collections::HashMap;
+use wealthfolio_core::events::DomainEvent;
 
 use crate::events::{
     emit_portfolio_trigger_recalculate, emit_portfolio_trigger_update, PortfolioRequestPayload,
@@ -12,6 +13,78 @@ use wealthfolio_core::quotes::{
     QuoteImport, SymbolSearchResult,
 };
 use wealthfolio_market_data::{DividendEvent, ExchangeInfo};
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetProviderHistoryError {
+    message: String,
+    outcome_unknown: bool,
+}
+
+impl ResetProviderHistoryError {
+    fn rejected(error: impl std::fmt::Display) -> Self {
+        Self {
+            message: error.to_string(),
+            outcome_unknown: false,
+        }
+    }
+
+    fn completion_unknown() -> Self {
+        Self {
+            message: "Reset completion could not be confirmed. Reload quotes before retrying."
+                .into(),
+            outcome_unknown: true,
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn reset_provider_history(
+    asset_id: String,
+    state: State<'_, DatabaseRuntime>,
+) -> Result<wealthfolio_core::quotes::ResetProviderHistoryResult, ResetProviderHistoryError> {
+    let context = state
+        .context()
+        .map_err(ResetProviderHistoryError::rejected)?;
+    // The owned task finishes commit and event delivery even if its caller disconnects.
+    tauri::async_runtime::spawn(async move {
+        let result = context
+            .quote_service()
+            .reset_provider_history(&asset_id)
+            .await;
+        if result.is_ok() {
+            context
+                .domain_event_sink
+                .emit(DomainEvent::PriceHistoryChanged);
+        }
+        result.map_err(ResetProviderHistoryError::rejected)
+    })
+    .await
+    .map_err(|_| ResetProviderHistoryError::completion_unknown())?
+}
+
+#[tauri::command]
+pub async fn reset_all_provider_history(
+    state: State<'_, DatabaseRuntime>,
+) -> Result<wealthfolio_core::quotes::ResetAllProviderHistoryResult, ResetProviderHistoryError> {
+    let context = state
+        .context()
+        .map_err(ResetProviderHistoryError::rejected)?;
+    tauri::async_runtime::spawn(async move {
+        let result = context.quote_service().reset_all_provider_history().await;
+        if result
+            .as_ref()
+            .is_ok_and(|result| !result.results.is_empty())
+        {
+            context
+                .domain_event_sink
+                .emit(DomainEvent::PriceHistoryChanged);
+        }
+        result.map_err(ResetProviderHistoryError::rejected)
+    })
+    .await
+    .map_err(|_| ResetProviderHistoryError::completion_unknown())?
+}
 
 #[tauri::command]
 pub async fn search_symbol(
@@ -56,11 +129,17 @@ pub async fn sync_market_data(
 #[tauri::command]
 pub async fn synch_quotes(state: State<'_, DatabaseRuntime>) -> Result<(), String> {
     let context = state.context()?;
-    let result = context
-        .quote_service()
-        .resync(None)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = tauri::async_runtime::spawn(async move {
+        let result = context.quote_service().resync(None).await;
+        if result.as_ref().is_ok_and(|result| result.synced > 0) {
+            context
+                .domain_event_sink
+                .emit(DomainEvent::PriceHistoryChanged);
+        }
+        result.map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|_| "Refresh completion could not be confirmed.".to_string())??;
     if result.failed > 0 {
         warn!("resync reported {} failures", result.failed);
     }
@@ -293,4 +372,25 @@ pub async fn fetch_dividends(
         })
         .await
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResetProviderHistoryError;
+
+    #[test]
+    fn reset_errors_distinguish_rejection_from_unknown_completion() {
+        let rejected = serde_json::to_value(ResetProviderHistoryError::rejected(
+            "Asset or provider settings changed during fetching; history was not replaced",
+        ))
+        .unwrap();
+        assert_eq!(rejected["outcomeUnknown"], false);
+        assert!(rejected["message"]
+            .as_str()
+            .unwrap()
+            .contains("history was not replaced"));
+        let unknown =
+            serde_json::to_value(ResetProviderHistoryError::completion_unknown()).unwrap();
+        assert_eq!(unknown["outcomeUnknown"], true);
+    }
 }

@@ -1,7 +1,7 @@
 import { useHoldings } from "@/hooks/use-holdings";
 import { useSettings } from "@/hooks/use-settings";
 import { ACTIVITY_SUBTYPES, ActivityType, QuoteMode } from "@/lib/constants";
-import { buildOccSymbol } from "@/lib/occ-symbol";
+import { buildOccSymbol, isValidOptionExpiration } from "@/lib/occ-symbol";
 import { normalizeCurrency } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNumberFormatting } from "@wealthfolio/ui";
@@ -186,6 +186,17 @@ export const createBuyFormSchema = (t?: TFunction) =>
               t,
               "activity:form.err_expiration_required",
               "Expiration date is required.",
+            ),
+            path: ["expirationDate"],
+          });
+        }
+        if (data.expirationDate?.trim() && !isValidOptionExpiration(data.expirationDate)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: msg(
+              t,
+              "activity:form.err_expiration_invalid",
+              "Enter a valid expiration date.",
             ),
             path: ["expirationDate"],
           });
