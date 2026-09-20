@@ -250,7 +250,32 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
     let Some(timezone) = read_setting(&deps, &deps.timezone, "Timezone") else {
         return;
     };
-    if let Some(config) = plan_portfolio_job(events, &timezone) {
+    if let Some(mut config) = plan_portfolio_job(events, &timezone) {
+        let prices_changed = events
+            .iter()
+            .any(|event| matches!(event, DomainEvent::PriceHistoryChanged));
+        if prices_changed {
+            deps.health_service.clear_cache().await;
+            use wealthfolio_core::accounts::AccountServiceTrait;
+            // Saved prices affect archived account history and the in-memory FX cache too.
+            let accounts = deps
+                .fx_service
+                .initialize()
+                .and_then(|()| deps.account_service.get_all_accounts());
+            match accounts {
+                Ok(accounts) => {
+                    config.account_ids = Some(accounts.into_iter().map(|a| a.id).collect())
+                }
+                Err(error) => {
+                    deps.event_bus
+                        .publish(crate::events::ServerEvent::with_payload(
+                            crate::events::PORTFOLIO_UPDATE_ERROR,
+                            serde_json::json!(error.to_string()),
+                        ));
+                    return;
+                }
+            }
+        }
         tracing::info!(
             "Triggering portfolio job for accounts: {:?}, market_sync: {:?}",
             config.account_ids,
@@ -523,6 +548,7 @@ async fn run_portfolio_job(
         }
     }
 
+    deps.health_service.clear_cache().await;
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
 }
 

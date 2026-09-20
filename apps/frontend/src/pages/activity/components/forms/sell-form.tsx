@@ -1,7 +1,7 @@
 import { useHoldings } from "@/hooks/use-holdings";
 import { useSettings } from "@/hooks/use-settings";
 import { ACTIVITY_SUBTYPES, ActivityType, QuoteMode } from "@/lib/constants";
-import { buildOccSymbol } from "@/lib/occ-symbol";
+import { buildOccSymbol, isValidOptionExpiration } from "@/lib/occ-symbol";
 import { normalizeCurrency } from "@/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNumberFormatting } from "@wealthfolio/ui";
@@ -185,6 +185,17 @@ export const createSellFormSchema = (t?: TFunction) =>
               t,
               "activity:form.err_expiration_required",
               "Expiration date is required.",
+            ),
+            path: ["expirationDate"],
+          });
+        }
+        if (data.expirationDate?.trim() && !isValidOptionExpiration(data.expirationDate)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: msg(
+              t,
+              "activity:form.err_expiration_invalid",
+              "Enter a valid expiration date.",
             ),
             path: ["expirationDate"],
           });
@@ -382,24 +393,24 @@ export function SellForm({
   const { holdings } = useHoldings({ type: "account", accountId });
 
   // Resolve the effective assetId for holdings lookup (OCC symbol for options)
+  const underlying = watch("underlyingSymbol");
+  const strike = watch("strikePrice");
+  const expiration = watch("expirationDate");
+  const optType = watch("optionType");
   const effectiveAssetId = useMemo(() => {
     if (!isOption) return assetId;
-    const underlying = watch("underlyingSymbol");
-    const strike = watch("strikePrice");
-    const expiration = watch("expirationDate");
-    const optType = watch("optionType");
-    if (underlying && strike && expiration && optType) {
+    if (underlying && strike && isValidOptionExpiration(expiration) && optType) {
       return buildOccSymbol(underlying, expiration, optType, strike);
     }
     return assetId;
-  }, [isOption, assetId, watch]);
+  }, [isOption, assetId, underlying, strike, expiration, optType]);
 
   const originalEffectiveAssetId = useMemo(() => {
     if (!isEditing || !defaultValues) return "";
     if (defaultValues.assetType !== "option") return defaultValues.assetId ?? "";
 
     const { underlyingSymbol, strikePrice, expirationDate, optionType } = defaultValues;
-    if (underlyingSymbol && strikePrice && expirationDate && optionType) {
+    if (underlyingSymbol && strikePrice && isValidOptionExpiration(expirationDate) && optionType) {
       return buildOccSymbol(underlyingSymbol, expirationDate, optionType, strikePrice);
     }
     return defaultValues.assetId ?? "";

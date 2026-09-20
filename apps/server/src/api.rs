@@ -82,7 +82,8 @@ pub async fn readyz() -> &'static str {
 )]
 pub struct ApiDoc;
 
-const SERVER_CSP: &str = "default-src 'self'; script-src 'self' 'sha256-s/UhdlprnzFxx+iXOtDj2n/Jk+MSRz1g/1lyBtFatVw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: https:; font-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://wealthfolio.app https://auth.wealthfolio.app https://connect.wealthfolio.app https://connect-staging.wealthfolio.app; frame-src 'none'; child-src 'self' blob: about:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'self' blob:";
+// Keep the addon bootstrap hash as well as the application's inline theme script.
+const SERVER_CSP: &str = "default-src 'self'; script-src 'self' 'sha256-slMj4GRDTmxgcSqtC7zLnSIFInhTIO1M3Z6Gs7s7D+k=' 'sha256-s/UhdlprnzFxx+iXOtDj2n/Jk+MSRz1g/1lyBtFatVw=' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: https:; font-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://wealthfolio.app https://auth.wealthfolio.app https://connect.wealthfolio.app https://connect-staging.wealthfolio.app; frame-src 'none'; child-src 'self' blob: about:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; worker-src 'self' blob:";
 const ADDON_SANDBOX_CSP: &str = "default-src 'none'; script-src 'sha256-s/UhdlprnzFxx+iXOtDj2n/Jk+MSRz1g/1lyBtFatVw=' 'wasm-unsafe-eval' blob:; style-src 'unsafe-inline' blob:; img-src data: blob:; font-src data: blob:; media-src data: blob:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
 pub async fn security_headers(request: Request<Body>, next: Next) -> Response {
@@ -252,6 +253,45 @@ mod security_header_tests {
     use super::*;
     use axum::{routing::get, Router};
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn application_csp_allows_inline_theme_initialization() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        use sha2::{Digest, Sha256};
+
+        let html = include_str!("../../frontend/index.html");
+        let app = Router::new()
+            .route("/", get(move || async move { html }))
+            .layer(axum::middleware::from_fn(security_headers));
+        let response = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let csp = response.headers()["content-security-policy"]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let html = std::str::from_utf8(&body).unwrap();
+        let script = html
+            .split_once("<script>")
+            .expect("theme initialization script")
+            .1
+            .split_once("</script>")
+            .unwrap()
+            .0;
+        let hash = STANDARD.encode(Sha256::digest(script.as_bytes()));
+        let script_src = csp
+            .split(';')
+            .find(|directive| directive.trim_start().starts_with("script-src "))
+            .unwrap();
+        assert!(script_src
+            .split_whitespace()
+            .any(|source| source == format!("'sha256-{hash}'")));
+        assert!(!script_src.contains("'unsafe-inline'"));
+    }
 
     #[tokio::test]
     async fn addon_sandbox_response_uses_network_free_csp() {
