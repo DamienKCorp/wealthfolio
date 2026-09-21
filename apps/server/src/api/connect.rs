@@ -8,7 +8,7 @@ use std::sync::Arc;
 use wealthfolio_core::settings::SettingsServiceTrait;
 
 use axum::{
-    extract::{Query, State},
+    extract::Query,
     routing::{delete, get, post},
     Json, Router,
 };
@@ -165,6 +165,8 @@ async fn create_connect_client(state: &AppState) -> ApiResult<ConnectApiClient> 
 #[serde(rename_all = "camelCase")]
 pub struct StoreSyncSessionRequest {
     pub refresh_token: String,
+    #[serde(default)]
+    pub confirm_rebind: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -358,25 +360,74 @@ impl SyncProgressReporter for EventBusProgressReporter {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async fn store_sync_session(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+    axum::Extension(profiles): axum::Extension<Arc<crate::profiles::WebProfiles>>,
+    axum::Extension(access): axum::Extension<crate::profiles::ProfileAccess>,
     Json(body): Json<StoreSyncSessionRequest>,
 ) -> ApiResult<Json<()>> {
+    let _transition = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        state.connect_transition.clone().write_owned(),
+    )
+    .await
+    .map_err(|_| {
+        ApiError::Forbidden(
+            "Profile operations are running. Wait for them to finish and try again.".into(),
+        )
+    })?;
+    // The browser may have locked or switched profiles while Connect work finished.
+    profiles
+        .registry
+        .sessions
+        .admit(&access.owner, access.session.scope_id)
+        .map_err(|error| ApiError::Forbidden(error.to_string()))?;
+    let _sync_lifecycle = state.profile_lifecycle.lock().await;
     ensure_cloud_sync_enabled()?;
+    let config = token_lifecycle_config()
+        .ok_or_else(|| ApiError::Forbidden("Connect auth unavailable".into()))?;
+    let (registry, id) = state
+        .profile_binding
+        .get()
+        .ok_or_else(|| ApiError::Forbidden("Profile binding unavailable".into()))?;
+    let _broker_guard = try_acquire_broker_sync_guard(&state).ok_or_else(|| {
+        ApiError::Forbidden("Broker sync is running. Wait for it to finish and try again.".into())
+    })?;
     state
         .token_lifecycle
-        .store_session_after_restore(
-            state.secret_store.as_ref(),
-            state.settings_service.as_ref(),
+        .store_profile_session(
+            wealthfolio_connect::token_lifecycle::ProfileLoginContext {
+                store: state.secret_store.as_ref(),
+                settings: state.settings_service.as_ref(),
+                registry: registry.as_ref(),
+                profile_id: *id,
+            },
             &body.refresh_token,
+            body.confirm_rebind,
+            &config,
+            &cloud_api_base_url()?,
+            || async {
+                #[cfg(feature = "device-sync")]
+                {
+                    state.device_sync_runtime.ensure_background_stopped().await;
+                    state.device_sync_runtime.clear_flows()?;
+                    state.sync_approvals.clear()?;
+                }
+                state
+                    .app_sync_repository
+                    .clear_connect_binding_state()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            },
         )
         .await
-        .map_err(map_token_lifecycle_error)?;
+        .map_err(ApiError::Forbidden)?;
 
     Ok(Json(()))
 }
 
 async fn post_login_bootstrap(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<PostLoginBootstrapResult>> {
     let broker_sync = run_post_login_broker_bootstrap(Arc::clone(&state)).await;
     let device_sync = run_post_login_device_bootstrap(state).await;
@@ -483,7 +534,9 @@ async fn run_post_login_device_bootstrap(_state: Arc<AppState>) -> PostLoginBoot
     PostLoginBootstrapSyncResult::skipped(PostLoginBootstrapReason::FeatureDisabled)
 }
 
-async fn clear_sync_session(State(state): State<Arc<AppState>>) -> ApiResult<Json<()>> {
+async fn clear_sync_session(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+) -> ApiResult<Json<()>> {
     ensure_cloud_sync_enabled()?;
     info!("[Connect] Clearing sync session");
 
@@ -499,7 +552,7 @@ async fn disconnect_cloud_session(state: &AppState) -> Result<(), String> {
         .token_lifecycle
         .clear_session_with(state.secret_store.as_ref(), || async {
             #[cfg(feature = "device-sync")]
-            device_sync_engine::clear_min_snapshot_created_at_from_store();
+            device_sync_engine::clear_min_snapshot_created_at_from_store(state);
             let _ = state
                 .app_sync_repository
                 .clear_all_min_snapshot_created_at()
@@ -513,7 +566,7 @@ async fn disconnect_cloud_session(state: &AppState) -> Result<(), String> {
 }
 
 async fn get_sync_session_status(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<SyncSessionStatus>> {
     ensure_cloud_sync_enabled()?;
     let is_configured = !state
@@ -529,7 +582,7 @@ async fn get_sync_session_status(
 }
 
 async fn restore_sync_session(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<RestoreSyncSessionResponse>> {
     ensure_cloud_sync_enabled()?;
     let access_token = mint_access_token(&state).await?;
@@ -561,13 +614,27 @@ pub(crate) async fn mint_access_token(state: &AppState) -> ApiResult<String> {
         ));
     }
     let config = token_lifecycle_config();
-    ensure_valid_access_token(
+    let token = ensure_valid_access_token(
         state.secret_store.as_ref(),
         state.token_lifecycle.as_ref(),
         config.as_ref(),
     )
     .await
-    .map_err(map_token_lifecycle_error)
+    .map_err(map_token_lifecycle_error)?;
+    let (registry, id) = state
+        .profile_binding
+        .get()
+        .ok_or_else(|| ApiError::Forbidden("Profile binding unavailable".into()))?;
+    wealthfolio_connect::token_lifecycle::admit_profile_binding(
+        &token,
+        &config.ok_or_else(|| ApiError::Forbidden("Connect auth unavailable".into()))?,
+        &cloud_api_base_url()?,
+        registry.as_ref(),
+        *id,
+    )
+    .await
+    .map_err(ApiError::Forbidden)?;
+    Ok(token)
 }
 
 fn map_token_lifecycle_error(err: TokenLifecycleError) -> ApiError {
@@ -584,7 +651,7 @@ fn map_token_lifecycle_error(err: TokenLifecycleError) -> ApiError {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async fn sync_broker_connections(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<SyncConnectionsResponse>> {
     ensure_connect_sync_enabled()?;
     if !has_broker_sync(&state).await.map_err(ApiError::Internal)? {
@@ -623,7 +690,7 @@ async fn sync_broker_connections(
 }
 
 async fn sync_broker_accounts(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<SyncAccountsResponse>> {
     ensure_connect_sync_enabled()?;
     if !has_broker_sync(&state).await.map_err(ApiError::Internal)? {
@@ -659,7 +726,7 @@ async fn sync_broker_accounts(
 }
 
 async fn sync_broker_activities(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<SyncActivitiesResponse>> {
     ensure_connect_sync_enabled()?;
     if !has_broker_sync(&state).await.map_err(ApiError::Internal)? {
@@ -681,7 +748,7 @@ async fn sync_broker_activities(
 
 /// Trigger a full broker data sync (connections → accounts → activities).
 /// Returns immediately with 202 Accepted. Sync runs in background and emits SSE events.
-async fn sync_broker_data(State(state): State<Arc<AppState>>) -> StatusCode {
+async fn sync_broker_data(axum::Extension(state): axum::Extension<Arc<AppState>>) -> StatusCode {
     if let Err(err) = ensure_connect_sync_enabled() {
         error!("[Connect] Broker sync skipped: {}", err);
         return StatusCode::NOT_IMPLEMENTED;
@@ -813,7 +880,7 @@ async fn perform_broker_activities_only_sync(
 }
 
 async fn get_subscription_plans(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<PlansResponse>> {
     ensure_cloud_sync_enabled()?;
     info!("[Connect] Getting subscription plans...");
@@ -841,7 +908,9 @@ async fn get_subscription_plans_public() -> ApiResult<Json<PlansResponse>> {
     Ok(Json(plans))
 }
 
-async fn get_user_info(State(state): State<Arc<AppState>>) -> ApiResult<Json<UserInfo>> {
+async fn get_user_info(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+) -> ApiResult<Json<UserInfo>> {
     ensure_cloud_sync_enabled()?;
 
     let client = create_connect_client(&state).await?;
@@ -859,7 +928,7 @@ async fn get_user_info(State(state): State<Arc<AppState>>) -> ApiResult<Json<Use
 // ─────────────────────────────────────────────────────────────────────────────
 
 async fn list_broker_connections(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<Vec<wealthfolio_connect::broker::BrokerConnection>>> {
     ensure_connect_sync_enabled()?;
     info!("[Connect] Listing broker connections from cloud...");
@@ -876,7 +945,7 @@ async fn list_broker_connections(
 }
 
 async fn list_broker_accounts(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<Vec<wealthfolio_connect::broker::BrokerAccount>>> {
     ensure_connect_sync_enabled()?;
     info!("[Connect] Listing broker accounts from cloud...");
@@ -907,7 +976,7 @@ pub struct GetImportRunsQuery {
 
 /// Get all synced accounts (accounts with provider_account_id set)
 async fn get_synced_accounts(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<Vec<wealthfolio_core::accounts::Account>>> {
     if !crate::features::connect_sync_enabled() {
         return Ok(Json(vec![]));
@@ -926,7 +995,7 @@ async fn get_synced_accounts(
 
 /// Get all platforms from local database
 async fn get_platforms(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<Vec<wealthfolio_connect::Platform>>> {
     if !crate::features::connect_sync_enabled() {
         return Ok(Json(vec![]));
@@ -945,7 +1014,7 @@ async fn get_platforms(
 
 /// Get all broker sync states from local database
 async fn get_broker_sync_states(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<Vec<wealthfolio_connect::BrokerSyncState>>> {
     if !crate::features::connect_sync_enabled() {
         return Ok(Json(vec![]));
@@ -963,7 +1032,7 @@ async fn get_broker_sync_states(
 
 /// Get import runs with optional type filter and pagination
 async fn get_import_runs(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Query(query): Query<GetImportRunsQuery>,
 ) -> ApiResult<Json<Vec<wealthfolio_connect::ImportRun>>> {
     if !crate::features::connect_sync_enabled() {
@@ -997,7 +1066,7 @@ struct BrokerSyncProfileQuery {
 }
 
 async fn get_broker_sync_profile(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Query(q): Query<BrokerSyncProfileQuery>,
 ) -> ApiResult<Json<wealthfolio_core::activities::BrokerSyncProfileData>> {
     Ok(Json(
@@ -1008,7 +1077,7 @@ async fn get_broker_sync_profile(
 }
 
 async fn save_broker_sync_profile_rules(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(request): Json<wealthfolio_core::activities::SaveBrokerSyncProfileRulesRequest>,
 ) -> ApiResult<Json<wealthfolio_core::activities::BrokerSyncProfileData>> {
     Ok(Json(
@@ -1026,7 +1095,7 @@ async fn save_broker_sync_profile_rules(
 /// Get the current device sync state (FRESH, REGISTERED, READY, STALE, RECOVERY, ORPHANED)
 #[cfg(feature = "device-sync")]
 async fn get_device_sync_state(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<SyncStateResult>> {
     ensure_device_sync_enabled()?;
     info!("[Connect] Getting device sync state...");
@@ -1044,7 +1113,7 @@ async fn get_device_sync_state(
 /// Enable device sync - enrolls the device and initializes E2EE if first device
 #[cfg(feature = "device-sync")]
 async fn enable_device_sync(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<EnableSyncResult>> {
     ensure_device_sync_enabled()?;
     info!("[Connect] Enabling device sync...");
@@ -1056,7 +1125,7 @@ async fn enable_device_sync(
         .await
         .map_err(|e| ApiError::Internal(e.message))?;
 
-    device_sync_engine::clear_min_snapshot_created_at_from_store();
+    device_sync_engine::clear_min_snapshot_created_at_from_store(&state);
     let _ = state
         .app_sync_repository
         .clear_all_min_snapshot_created_at()
@@ -1079,7 +1148,9 @@ async fn enable_device_sync(
 
 /// Clear all device sync data and return to FRESH state
 #[cfg(feature = "device-sync")]
-async fn clear_device_sync_data(State(state): State<Arc<AppState>>) -> ApiResult<Json<()>> {
+async fn clear_device_sync_data(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+) -> ApiResult<Json<()>> {
     ensure_device_sync_enabled()?;
     info!("[Connect] Clearing device sync data...");
 
@@ -1091,7 +1162,7 @@ async fn clear_device_sync_data(State(state): State<Arc<AppState>>) -> ApiResult
         .clear_sync_data()
         .map_err(|e| ApiError::Internal(e.message))?;
     let _ = state.app_sync_repository.reset_local_sync_session().await;
-    device_sync_engine::clear_min_snapshot_created_at_from_store();
+    device_sync_engine::clear_min_snapshot_created_at_from_store(&state);
     let _ = state
         .app_sync_repository
         .clear_all_min_snapshot_created_at()
@@ -1103,7 +1174,7 @@ async fn clear_device_sync_data(State(state): State<Arc<AppState>>) -> ApiResult
 /// Reinitialize device sync - resets server data and enables sync in one operation
 #[cfg(feature = "device-sync")]
 async fn reinitialize_device_sync(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<EnableSyncResult>> {
     ensure_device_sync_enabled()?;
     info!("[Connect] Reinitializing device sync...");
@@ -1115,7 +1186,7 @@ async fn reinitialize_device_sync(
         .await
         .map_err(|e| ApiError::Internal(e.message))?;
 
-    device_sync_engine::clear_min_snapshot_created_at_from_store();
+    device_sync_engine::clear_min_snapshot_created_at_from_store(&state);
     let _ = state
         .app_sync_repository
         .clear_all_min_snapshot_created_at()
@@ -1136,7 +1207,7 @@ async fn reinitialize_device_sync(
 
 #[cfg(feature = "device-sync")]
 async fn get_device_sync_engine_status(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<DeviceSyncEngineStatusResponse>> {
     ensure_device_sync_enabled()?;
     let status = device_sync_engine::get_engine_status(&state)
@@ -1158,7 +1229,7 @@ async fn get_device_sync_engine_status(
 
 #[cfg(feature = "device-sync")]
 async fn get_device_sync_pairing_source_status(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<DeviceSyncPairingSourceStatusResponse>> {
     ensure_device_sync_enabled()?;
     let status = device_sync_engine::get_pairing_source_status(&state)
@@ -1174,7 +1245,7 @@ async fn get_device_sync_pairing_source_status(
 
 #[cfg(feature = "device-sync")]
 async fn get_device_sync_bootstrap_overwrite_check(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<DeviceSyncBootstrapOverwriteCheckResponse>> {
     ensure_device_sync_enabled()?;
     let result = device_sync_engine::get_bootstrap_overwrite_check(&state)
@@ -1198,7 +1269,7 @@ async fn get_device_sync_bootstrap_overwrite_check(
 
 #[cfg(feature = "device-sync")]
 async fn bootstrap_device_snapshot(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<DeviceSyncBootstrapResponse>> {
     ensure_device_sync_enabled()?;
     let result = device_sync_engine::sync_bootstrap_snapshot_if_needed(Arc::clone(&state))
@@ -1230,7 +1301,7 @@ async fn bootstrap_device_snapshot(
 
 #[cfg(feature = "device-sync")]
 async fn trigger_device_sync_cycle(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<DeviceSyncCycleResponse>> {
     ensure_device_sync_enabled()?;
     let result = device_sync_engine::run_sync_cycle(state, false)
@@ -1251,7 +1322,7 @@ async fn trigger_device_sync_cycle(
 
 #[cfg(feature = "device-sync")]
 async fn start_device_sync_background_engine(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<DeviceSyncBackgroundResponse>> {
     ensure_device_sync_enabled()?;
     device_sync_engine::ensure_background_engine_started(Arc::clone(&state))
@@ -1274,7 +1345,7 @@ async fn start_device_sync_background_engine(
 
 #[cfg(feature = "device-sync")]
 async fn reconcile_device_sync_ready_state(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<DeviceSyncReconcileReadyRequest>,
 ) -> ApiResult<Json<DeviceSyncReconcileReadyResponse>> {
     ensure_device_sync_enabled()?;
@@ -1286,7 +1357,7 @@ async fn reconcile_device_sync_ready_state(
 
 #[cfg(feature = "device-sync")]
 async fn stop_device_sync_background_engine(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<DeviceSyncBackgroundResponse>> {
     ensure_device_sync_enabled()?;
     device_sync_engine::ensure_background_engine_stopped(state)
@@ -1300,7 +1371,7 @@ async fn stop_device_sync_background_engine(
 
 #[cfg(feature = "device-sync")]
 async fn generate_device_snapshot_now(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<DeviceSyncSnapshotUploadResponse>> {
     ensure_device_sync_enabled()?;
     let result = device_sync_engine::generate_snapshot_now(state)
@@ -1316,7 +1387,7 @@ async fn generate_device_snapshot_now(
 
 #[cfg(feature = "device-sync")]
 async fn cancel_device_snapshot_upload(
-    State(state): State<Arc<AppState>>,
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<DeviceSyncBackgroundResponse>> {
     ensure_device_sync_enabled()?;
     device_sync_engine::cancel_snapshot_upload(state).await;
@@ -1330,10 +1401,9 @@ async fn cancel_device_snapshot_upload(
 // Router
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub fn router() -> Router<Arc<AppState>> {
+pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     let router = Router::new()
         // Session management
-        .route("/connect/session", post(store_sync_session))
         .route("/connect/post-login-bootstrap", post(post_login_bootstrap))
         .route("/connect/session", delete(clear_sync_session))
         .route("/connect/session/status", get(get_sync_session_status))
@@ -1413,6 +1483,9 @@ pub fn router() -> Router<Arc<AppState>> {
         );
 
     router
+        .route_layer(axum::middleware::from_fn(crate::profiles::admit_connect))
+        // Login owns the exclusive guard; it must not also acquire a shared guard.
+        .route("/connect/session", post(store_sync_session))
 }
 
 #[cfg(test)]
@@ -1653,7 +1726,7 @@ mod tests {
     #[cfg(feature = "device-sync")]
     #[test]
     fn connect_router_includes_device_engine_routes() {
-        let _router = router();
+        let _router: Router = router();
     }
 
     #[cfg(feature = "device-sync")]

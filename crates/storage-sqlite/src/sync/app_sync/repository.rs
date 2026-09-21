@@ -26,7 +26,8 @@ use crate::schema::{
 };
 use crate::spending::deterministic_ids::preset_rule_deletion_id;
 use crate::sync::broker_activity_patch::{
-    apply_broker_activity_user_patch_tx, BrokerActivityUserPatchApplyOutcome,
+    apply_broker_activity_user_patch_tx, BrokerActivityPatchQueue,
+    BrokerActivityUserPatchApplyOutcome,
 };
 
 use super::model::{
@@ -1978,6 +1979,7 @@ fn mark_table_incremental_applied_tx(conn: &mut SqliteConnection, table_name: &s
 #[allow(clippy::too_many_arguments)]
 fn apply_remote_event_lww_tx(
     conn: &mut SqliteConnection,
+    pending: &BrokerActivityPatchQueue,
     entity: SyncEntity,
     entity_id_value: String,
     op: SyncOperation,
@@ -2028,6 +2030,7 @@ fn apply_remote_event_lww_tx(
                 SyncOperation::Create | SyncOperation::Update => {
                     match apply_broker_activity_user_patch_tx(
                         conn,
+                        pending,
                         &entity_id_value,
                         &event_id_value,
                         &payload_json,
@@ -2411,9 +2414,24 @@ impl AppSyncRepository {
             .await
     }
 
+    /// Detach broker integration state while retaining accounts and financial rows.
+    /// Only used after an explicitly confirmed Connect identity change.
+    pub async fn clear_connect_binding_state(&self) -> Result<()> {
+        self.reset_sync_session(true).await
+    }
+
     pub async fn reset_local_sync_session(&self) -> Result<()> {
+        self.reset_sync_session(false).await
+    }
+
+    async fn reset_sync_session(&self, detach_connect: bool) -> Result<()> {
         self.writer
             .exec(move |conn| {
+                if detach_connect {
+                    diesel::sql_query("DELETE FROM brokers_sync_state").execute(conn).map_err(StorageError::from)?;
+                    diesel::sql_query("UPDATE accounts SET provider=NULL, provider_account_id=NULL WHERE provider IS NOT NULL OR provider_account_id IS NOT NULL").execute(conn).map_err(StorageError::from)?;
+                    diesel::sql_query("INSERT INTO app_settings(setting_key, setting_value) VALUES ('sync_enabled','false') ON CONFLICT(setting_key) DO UPDATE SET setting_value='false'").execute(conn).map_err(StorageError::from)?;
+                }
                 let now = Utc::now().to_rfc3339();
 
                 diesel::delete(sync_outbox::table)
@@ -2732,10 +2750,12 @@ impl AppSyncRepository {
         seq_value: i64,
         payload_json: serde_json::Value,
     ) -> Result<bool> {
+        let sync_state = self.writer.sync_state();
         self.writer
             .exec(move |conn| {
                 apply_remote_event_lww_tx(
                     conn,
+                    &sync_state.broker_activity_patches,
                     entity,
                     entity_id_value.clone(),
                     op,
@@ -2774,6 +2794,7 @@ impl AppSyncRepository {
             return Ok(0);
         }
 
+        let sync_state = self.writer.sync_state();
         self.writer
             .exec(move |conn| {
                 // Defer FK checks during batch replay — events may arrive
@@ -2801,6 +2822,7 @@ impl AppSyncRepository {
                     {
                         if apply_remote_event_lww_tx(
                             conn,
+                            &sync_state.broker_activity_patches,
                             entity,
                             entity_id.clone(),
                             op,
@@ -3519,7 +3541,6 @@ mod tests {
     };
     use crate::sync::broker_activity_patch::{
         broker_activity_identity, broker_activity_user_patch_entity_id,
-        clear_pending_broker_activity_user_patches,
     };
     use wealthfolio_core::accounts::account_types;
     use wealthfolio_core::activities::{ActivityRepositoryTrait, ActivityUpsert};
@@ -3733,7 +3754,7 @@ mod tests {
 
     #[tokio::test]
     async fn broker_activity_user_patch_updates_only_overlay_fields() {
-        let (pool, _writer) = setup_db();
+        let (pool, writer) = setup_db();
         let mut conn = get_connection(&pool).expect("conn");
 
         diesel::sql_query(
@@ -3786,6 +3807,7 @@ mod tests {
 
         let applied = apply_remote_event_lww_tx(
             &mut conn,
+            &writer.sync_state().broker_activity_patches,
             SyncEntity::BrokerActivityUserPatch,
             entity_id,
             SyncOperation::Update,
@@ -3850,7 +3872,6 @@ mod tests {
 
     #[tokio::test]
     async fn broker_activity_user_patch_missing_target_defers_until_broker_import() {
-        clear_pending_broker_activity_user_patches();
         let (pool, writer) = setup_db();
         let mut conn = get_connection(&pool).expect("conn");
 
@@ -3876,6 +3897,7 @@ mod tests {
 
         let applied = apply_remote_event_lww_tx(
             &mut conn,
+            &writer.sync_state().broker_activity_patches,
             SyncEntity::BrokerActivityUserPatch,
             entity_id.clone(),
             SyncOperation::Update,
@@ -3988,7 +4010,6 @@ mod tests {
             .get_result(&mut conn)
             .expect("applied event count after replay");
         assert_eq!(applied_event_count, 1);
-        clear_pending_broker_activity_user_patches();
     }
 
     fn insert_goal_for_test(conn: &mut SqliteConnection, goal_id: &str) -> Result<()> {
@@ -6067,6 +6088,56 @@ mod tests {
         assert_eq!(outbox_count, 0);
         assert_eq!(metadata_count, 0);
         assert_eq!(applied_count, 0);
+    }
+
+    #[tokio::test]
+    async fn connect_rebind_detaches_brokers_and_preserves_financial_accounts() {
+        let (pool, writer) = setup_db();
+        let repo = AppSyncRepository::new(pool.clone(), writer);
+        {
+            let mut conn = get_connection(&pool).unwrap();
+            insert_account_for_test(&mut conn, "keep").unwrap();
+            diesel::sql_query("UPDATE accounts SET provider='SNAPTRADE', provider_account_id='old-cloud-account' WHERE id='keep'").execute(&mut conn).unwrap();
+        }
+        {
+            let mut conn = get_connection(&pool).unwrap();
+            diesel::sql_query("CREATE TRIGGER fail_rebind BEFORE INSERT ON sync_cursor BEGIN SELECT RAISE(ABORT, 'test cleanup failure'); END").execute(&mut conn).unwrap();
+        }
+        assert!(repo.clear_connect_binding_state().await.is_err());
+        {
+            let mut conn = get_connection(&pool).unwrap();
+            use crate::schema::accounts;
+            let provider: Option<String> = accounts::table
+                .select(accounts::provider)
+                .filter(accounts::id.eq("keep"))
+                .first(&mut conn)
+                .unwrap();
+            assert_eq!(provider.as_deref(), Some("SNAPTRADE"));
+            diesel::sql_query("DROP TRIGGER fail_rebind")
+                .execute(&mut conn)
+                .unwrap();
+        }
+        repo.clear_connect_binding_state().await.unwrap();
+        let mut conn = get_connection(&pool).unwrap();
+        use crate::schema::accounts;
+        let (id, provider, provider_id): (String, Option<String>, Option<String>) = accounts::table
+            .select((
+                accounts::id,
+                accounts::provider,
+                accounts::provider_account_id,
+            ))
+            .filter(accounts::id.eq("keep"))
+            .first(&mut conn)
+            .unwrap();
+        assert_eq!(id, "keep");
+        assert_eq!((provider, provider_id), (None, None));
+        assert_eq!(
+            sync_outbox::table
+                .count()
+                .get_result::<i64>(&mut conn)
+                .unwrap(),
+            0
+        );
     }
 
     #[tokio::test]
