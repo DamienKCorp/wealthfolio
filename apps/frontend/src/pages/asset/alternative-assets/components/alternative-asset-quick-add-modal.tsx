@@ -135,6 +135,7 @@ interface FormData {
   linkedAssetId?: string;
   loanTerm?: string;
   interestRate?: string;
+  automaticSchedule?: boolean;
 }
 
 interface AlternativeAssetQuickAddModalProps {
@@ -183,6 +184,7 @@ export function AlternativeAssetQuickAddModal({
     currentValue: "",
     valueDate: new Date(),
     linkedAssetId: initialLinkedAssetId,
+    automaticSchedule: true,
   });
 
   const { createMutation } = useAlternativeAssetMutations();
@@ -201,6 +203,7 @@ export function AlternativeAssetQuickAddModal({
         valueDate: defaultOriginationDate || new Date(),
         linkedAssetId: initialLinkedAssetId,
         liabilityType: defaultLiabilityType,
+        automaticSchedule: true,
       });
     }
   }, [
@@ -239,7 +242,12 @@ export function AlternativeAssetQuickAddModal({
     if (step === 1) return true;
     const isLiability = formData.kind === AlternativeAssetKind.LIABILITY;
     if (isLiability) {
-      return formData.name.trim() && formData.purchasePrice && formData.purchaseDate;
+      const hasBalance = Boolean(formData.currentValue || formData.purchasePrice);
+      const hasRequiredDates = Boolean(formData.purchaseDate || formData.valueDate);
+      const hasAutomaticTerms =
+        !formData.automaticSchedule ||
+        Boolean(formData.purchasePrice && formData.purchaseDate && formData.loanTerm);
+      return formData.name.trim() && hasBalance && hasRequiredDates && hasAutomaticTerms;
     }
     return formData.name.trim() && formData.currentValue;
   }, [
@@ -249,6 +257,9 @@ export function AlternativeAssetQuickAddModal({
     formData.kind,
     formData.purchasePrice,
     formData.purchaseDate,
+    formData.valueDate,
+    formData.loanTerm,
+    formData.automaticSchedule,
   ]);
 
   const handleSubmit = async () => {
@@ -268,9 +279,11 @@ export function AlternativeAssetQuickAddModal({
 
     if (isLiability) {
       const validation = liabilityQuickAddSchema.safeParse({
-        originalAmount: formData.purchasePrice,
+        originalAmount: formData.automaticSchedule
+          ? formData.purchasePrice
+          : formData.purchasePrice || formData.currentValue,
         currentBalance: formData.currentValue || undefined,
-        originationDate: formData.purchaseDate,
+        originationDate: formData.purchaseDate || formData.valueDate,
         balanceDate: formData.valueDate,
         loanTerm: formData.loanTerm || undefined,
         interestRate: formData.interestRate || undefined,
@@ -280,6 +293,13 @@ export function AlternativeAssetQuickAddModal({
         setValidationError(
           issue?.startsWith("asset:") ? issue : "asset:quickAdd.validation.invalid",
         );
+        return;
+      }
+      if (
+        formData.automaticSchedule &&
+        (!formData.purchasePrice || !formData.purchaseDate || !formData.loanTerm)
+      ) {
+        setValidationError("asset:quickAdd.validation.invalid");
         return;
       }
     }
@@ -293,14 +313,17 @@ export function AlternativeAssetQuickAddModal({
     }
 
     if (isLiability) {
+      if (!formData.automaticSchedule) metadata.tracking_mode = "manual";
       if (formData.liabilityType) {
         metadata.sub_type = formData.liabilityType;
         metadata.liability_type = formData.liabilityType;
       }
       if (formData.purchasePrice) metadata.original_amount = formData.purchasePrice;
-      if (formData.purchaseDate) metadata.origination_date = formatDateToISO(formData.purchaseDate);
+      if (formData.purchaseDate && formData.automaticSchedule) {
+        metadata.origination_date = formatDateToISO(formData.purchaseDate);
+      }
       if (formData.interestRate) metadata.interest_rate = formData.interestRate;
-      if (formData.loanTerm && formData.purchaseDate) {
+      if (formData.automaticSchedule && formData.loanTerm && formData.purchaseDate) {
         const termMonths = Math.round(parseFloat(formData.loanTerm) * 12);
         const computedEndDate = addMonths(formData.purchaseDate, termMonths);
         metadata.end_date = formatDateToISO(computedEndDate);
@@ -353,10 +376,9 @@ export function AlternativeAssetQuickAddModal({
       currency: formData.currency,
       currentValue,
       valueDate: formatDateToISO(balanceQuoteDate),
-      // Liabilities use the amortization schedule for their historical quotes.
-      // Passing purchasePrice/purchaseDate here would create an extra opening
-      // balance before the first instalment and make the origination row show
-      // zero principal. Other alternative assets still use the purchase quote.
+      // Automated liabilities use the amortization schedule for historical
+      // quotes. Manual-only liabilities intentionally create only their
+      // current balance and never receive projection metadata.
       purchasePrice: !isLiability ? formData.purchasePrice || undefined : undefined,
       purchaseDate:
         !isLiability && formData.purchaseDate ? formatDateToISO(formData.purchaseDate) : undefined,
@@ -638,6 +660,22 @@ export function AlternativeAssetQuickAddModal({
                 {/* For liabilities: Original Amount + Origination Date are required and come first */}
                 {formData.kind === AlternativeAssetKind.LIABILITY && (
                   <>
+                    <div className="flex items-center gap-3 rounded-md border p-3">
+                      <Checkbox
+                        checked={formData.automaticSchedule !== false}
+                        onCheckedChange={(checked) =>
+                          updateFormData("automaticSchedule", checked === true)
+                        }
+                      />
+                      <div>
+                        <Label className="text-foreground text-sm font-medium">
+                          {t("asset:loanActions.recalculate_schedule")}
+                        </Label>
+                        <p className="text-muted-foreground text-xs">
+                          {t("asset:loanActions.recalculate_description")}
+                        </p>
+                      </div>
+                    </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-foreground text-sm font-medium">

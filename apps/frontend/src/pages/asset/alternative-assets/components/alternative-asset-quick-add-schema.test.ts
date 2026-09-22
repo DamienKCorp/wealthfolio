@@ -38,4 +38,13 @@ describe("liability quick-add validation", () => {
       );
     }
   });
+
+  it("accepts a manual-only liability without loan terms", () => {
+    expect(
+      liabilityQuickAddSchema.safeParse({
+        currentBalance: "12500",
+        balanceDate: new Date(2026, 0, 1),
+      }).success,
+    ).toBe(true);
+  });
 });

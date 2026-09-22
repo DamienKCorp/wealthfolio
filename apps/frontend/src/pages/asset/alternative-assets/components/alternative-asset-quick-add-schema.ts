@@ -39,15 +39,22 @@ export const ASSET_KIND_OPTIONS = [
 
 export const liabilityQuickAddSchema = z
   .object({
-    originalAmount: z.coerce.number().finite().positive(),
+    originalAmount: z.coerce.number().finite().positive().optional(),
     currentBalance: z.coerce.number().finite().min(0).optional(),
-    originationDate: z.date(),
+    originationDate: z.date().optional(),
     balanceDate: z.date(),
     loanTerm: z.coerce.number().finite().int().positive().max(100).optional(),
     interestRate: z.coerce.number().finite().min(0).max(100).optional(),
   })
   .superRefine((values, context) => {
-    if (values.balanceDate < values.originationDate) {
+    if (!values.originalAmount && values.currentBalance === undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["currentBalance"],
+        message: "asset:quickAdd.validation.invalid",
+      });
+    }
+    if (values.originationDate && values.balanceDate < values.originationDate) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["balanceDate"],
