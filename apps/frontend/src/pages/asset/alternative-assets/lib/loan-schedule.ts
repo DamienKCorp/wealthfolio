@@ -8,6 +8,7 @@ import {
 } from "date-fns";
 import type { Quote } from "@/lib/types";
 import type { QuoteImport } from "@/lib/types/quote-import";
+import { isProjectedLoanBalance } from "./loan-balance";
 
 interface BuildLoanScheduleParams {
   assetId: string;
@@ -163,9 +164,9 @@ export function getObsoleteFutureQuoteIds(
   return existingQuotes
     .filter((quote) => {
       const quoteDay = quote.timestamp.slice(0, 10);
-      const isGenerated =
-        quote.notes?.startsWith("loan_schedule") || quote.notes === "scheduled_payoff";
-      return isGenerated && quoteDay > effectiveDay && !replacementDays.has(quoteDay);
+      return (
+        isProjectedLoanBalance(quote) && quoteDay > effectiveDay && !replacementDays.has(quoteDay)
+      );
     })
     .map((quote) => quote.id);
 }

@@ -258,11 +258,18 @@ describe("loan schedule replacement", () => {
       quote("overwritten", "2026-03-01", "loan_schedule"),
       quote("obsolete", "2026-05-01", "loan_schedule"),
       quote("manual", "2026-06-01"),
+      quote("correction", "2026-07-01", "loan_event|type=balance_correction"),
     ];
 
     expect(getObsoleteFutureQuoteIds(existing, new Date(2026, 1, 15), replacement)).toEqual([
       "obsolete",
     ]);
+  });
+
+  it("preserves dated loan corrections when replacing projected values", () => {
+    const existing = [quote("correction", "2026-07-01", "loan_event|type=balance_correction")];
+
+    expect(getObsoleteFutureQuoteIds(existing, new Date(2026, 1, 15), [])).toEqual([]);
   });
 
   it("includes every contractual payment through the maturity month", () => {
