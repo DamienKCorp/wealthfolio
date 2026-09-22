@@ -48,6 +48,7 @@ import {
   EarlyRepaymentDialog,
   CloseLoanDialog,
   RecalculateScheduleDialog,
+  RenewLoanDialog,
 } from "./alternative-assets/components/loan-action-dialogs";
 import { useAlternativeAssetMutations } from "./alternative-assets/hooks/use-alternative-asset-mutations";
 import {
@@ -59,6 +60,11 @@ import {
 import { useQuoteMutations } from "./hooks/use-quote-mutations";
 import { LinkedAssetSection, LinkedLiabilitiesSection } from "./linked-liabilities-card";
 import { getLatestCurrentLoanBalance } from "./alternative-assets/lib/loan-balance";
+import {
+  appendLoanEvent,
+  LOAN_EVENTS_METADATA_KEY,
+  type LoanMetadata,
+} from "./alternative-assets/lib/loan-events";
 
 interface AlternativeAssetContentProps {
   assetId: string;
@@ -115,6 +121,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   const [earlyRepaymentOpen, setEarlyRepaymentOpen] = useState(false);
   const [closeLoanOpen, setCloseLoanOpen] = useState(false);
   const [recalculateScheduleOpen, setRecalculateScheduleOpen] = useState(false);
+  const [renewLoanOpen, setRenewLoanOpen] = useState(false);
 
   // Loan-specific computations (used in history tab and handlers)
   const latestConfirmedBalance = useMemo(
@@ -372,6 +379,46 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
 
     await invalidateQuoteQueries();
     setRecalculateScheduleOpen(false);
+  };
+
+  const handleRenewLoan = async (
+    effectiveDate: Date,
+    newRate: number,
+    paymentAmount?: number,
+    termEndDate?: Date,
+  ) => {
+    const existingMetadata = Object.fromEntries(
+      Object.entries(holding.metadata || {}).map(([key, value]) => [key, String(value)]),
+    );
+    const metadata = Object.fromEntries(
+      Object.entries(existingMetadata).map(([key, value]) => {
+        if (key !== LOAN_EVENTS_METADATA_KEY) return [key, value];
+        try {
+          return [key, JSON.parse(value)];
+        } catch {
+          return [key, []];
+        }
+      }),
+    ) as LoanMetadata;
+    const nextMetadata = appendLoanEvent(metadata, {
+      type: "renewal",
+      effectiveDate: formatDateISO(effectiveDate),
+      annualRate: newRate,
+      ...(paymentAmount !== undefined ? { paymentAmount } : {}),
+      ...(termEndDate ? { termEndDate: formatDateISO(termEndDate) } : {}),
+    });
+    const updates: Record<string, string> = Object.fromEntries(
+      Object.entries(nextMetadata).map(([key, value]) => [
+        key,
+        key === LOAN_EVENTS_METADATA_KEY ? JSON.stringify(value) : String(value),
+      ]),
+    );
+    updates.interest_rate = String(newRate);
+    if (paymentAmount !== undefined) updates.current_monthly_payment = String(paymentAmount);
+    if (termEndDate) updates.end_date = formatDateISO(termEndDate);
+    await updateMetadataMutation.mutateAsync({ assetId, metadata: updates });
+    await invalidateQuoteQueries();
+    setRenewLoanOpen(false);
   };
 
   // Filter chart data by date range
@@ -707,7 +754,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         onPersistComplete={invalidateQuoteQueries}
         onEarlyRepayment={isLiability ? () => setEarlyRepaymentOpen(true) : undefined}
         onCloseLoan={isLiability ? () => setCloseLoanOpen(true) : undefined}
-        onRecalculateSchedule={isLiability ? () => setRecalculateScheduleOpen(true) : undefined}
+        onRecalculateSchedule={isLiability ? () => setRenewLoanOpen(true) : undefined}
       />
       {isLiability && (
         <>
@@ -737,6 +784,15 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
             interestRate={interestRate}
             endDate={endDate}
             onSubmit={handleRecalculateSchedule}
+          />
+          <RenewLoanDialog
+            open={renewLoanOpen}
+            onOpenChange={setRenewLoanOpen}
+            currentBalance={currentBalance}
+            currency={holding.currency}
+            interestRate={interestRate}
+            endDate={endDate}
+            onSubmit={handleRenewLoan}
           />
         </>
       )}

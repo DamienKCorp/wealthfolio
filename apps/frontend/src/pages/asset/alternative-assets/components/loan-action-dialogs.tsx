@@ -406,3 +406,128 @@ export function RecalculateScheduleDialog({
     </Dialog>
   );
 }
+
+interface RenewLoanDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  currentBalance: number;
+  currency: string;
+  interestRate: number;
+  endDate: Date | null;
+  onSubmit: (
+    effectiveDate: Date,
+    newRate: number,
+    paymentAmount?: number,
+    termEndDate?: Date,
+  ) => Promise<void>;
+}
+
+/** Record a dated renewal without rewriting any historical quote. */
+export function RenewLoanDialog({
+  open,
+  onOpenChange,
+  currentBalance,
+  currency,
+  interestRate,
+  endDate,
+  onSubmit,
+}: RenewLoanDialogProps) {
+  const { t } = useTranslation();
+  const [effectiveDate, setEffectiveDate] = useState<Date>(() => new Date());
+  const [newRate, setNewRate] = useState(String(interestRate));
+  const [payment, setPayment] = useState<number | undefined>();
+  const [termEndDate, setTermEndDate] = useState<Date | undefined>(endDate ?? undefined);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setEffectiveDate(new Date());
+    setNewRate(String(interestRate));
+    setPayment(undefined);
+    setTermEndDate(endDate ?? undefined);
+  }, [endDate, interestRate, open]);
+
+  const parsedRate = Number(newRate);
+  const isInvalid =
+    !Number.isFinite(parsedRate) ||
+    parsedRate < 0 ||
+    parsedRate > 100 ||
+    effectiveDate > new Date() ||
+    (termEndDate !== undefined && termEndDate <= effectiveDate) ||
+    (payment !== undefined && (!Number.isFinite(payment) || payment <= 0));
+
+  const handleSubmit = async () => {
+    if (isSubmitting || isInvalid) return;
+    setIsSubmitting(true);
+    try {
+      await onSubmit(effectiveDate, parsedRate, payment, termEndDate);
+      onOpenChange(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("asset:loanActions.recalculate_schedule")}</DialogTitle>
+          <DialogDescription>{t("asset:loanActions.recalculate_description")}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="bg-muted rounded-md px-3 py-2 text-sm">
+            <span className="text-muted-foreground">
+              {t("asset:loanActions.recalculate_current_balance")}:{" "}
+            </span>
+            <AmountDisplay value={currentBalance} currency={currency} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t("asset:loanActions.repayment_date")}</Label>
+            <DatePickerInput
+              value={effectiveDate}
+              onChange={(date) => date && setEffectiveDate(date)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t("asset:loanActions.recalculate_new_rate")}</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              value={newRate}
+              onChange={(event) => setNewRate(event.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t("asset:loanActions.new_monthly_payment")}</Label>
+            <MoneyInput
+              value={payment ?? 0}
+              onValueChange={(value) => setPayment(value || undefined)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>{t("asset:altContent.end_date")}</Label>
+            <DatePickerInput
+              value={termEndDate}
+              onChange={(date) => setTermEndDate(date ?? undefined)}
+            />
+          </div>
+          {isInvalid && (
+            <p className="text-destructive text-sm" role="alert">
+              {t("asset:quickAdd.validation.invalid")}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+            {t("common:cancel")}
+          </Button>
+          <Button onClick={handleSubmit} disabled={isSubmitting || isInvalid}>
+            {isSubmitting && <Icons.Spinner className="mr-2 h-4 w-4 animate-spin" />}
+            {t("asset:loanActions.recalculate_confirm")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
