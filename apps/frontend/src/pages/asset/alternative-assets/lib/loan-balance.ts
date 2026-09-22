@@ -51,6 +51,34 @@ export function getProjectedLoanBalances<T extends LoanBalanceEntry>(entries: T[
   return entries.filter(isProjectedLoanBalance);
 }
 
+/**
+ * Compatibility view for loans created before projections were persisted as
+ * metadata. Legacy future schedule rows are ignored while historical and
+ * confirmed event rows remain available to the UI.
+ */
+export function getCurrentLoanBalances<T extends LoanBalanceEntry>(
+  entries: T[],
+  now = new Date(),
+): T[] {
+  const today = now.getTime();
+  return entries.filter(
+    (entry) => !isProjectedLoanBalance(entry) || new Date(entry.timestamp).getTime() <= today,
+  );
+}
+
+export function getLatestCurrentLoanBalance<T extends LoanBalanceEntry>(
+  entries: T[],
+  now = new Date(),
+): T | null {
+  return (
+    getCurrentLoanBalances(entries, now)
+      .sort(
+        (left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime(),
+      )
+      .at(0) ?? null
+  );
+}
+
 /** Create stable provenance for a persisted dated loan event. */
 export function loanEventProvenance(type: "balance_correction" | "extra_repayment"): string {
   return `${LOAN_EVENT_PROVENANCE}|type=${type}`;

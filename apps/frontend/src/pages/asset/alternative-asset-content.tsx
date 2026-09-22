@@ -58,6 +58,7 @@ import {
 } from "./alternative-assets/lib/loan-schedule";
 import { useQuoteMutations } from "./hooks/use-quote-mutations";
 import { LinkedAssetSection, LinkedLiabilitiesSection } from "./linked-liabilities-card";
+import { getLatestCurrentLoanBalance } from "./alternative-assets/lib/loan-balance";
 
 interface AlternativeAssetContentProps {
   assetId: string;
@@ -116,7 +117,14 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   const [recalculateScheduleOpen, setRecalculateScheduleOpen] = useState(false);
 
   // Loan-specific computations (used in history tab and handlers)
-  const currentBalance = Math.abs(parseFloat(holding.marketValue));
+  const latestConfirmedBalance = useMemo(
+    () => getLatestCurrentLoanBalance(quoteHistory),
+    [quoteHistory],
+  );
+  const currentBalance =
+    holding.kind.toLowerCase() === "liability"
+      ? Math.abs(latestConfirmedBalance?.close ?? parseFloat(holding.marketValue))
+      : Math.abs(parseFloat(holding.marketValue));
   const metadata = useMemo(() => holding.metadata || {}, [holding.metadata]);
   const interestRate = metadata.interest_rate ? parseFloat(metadata.interest_rate as string) : 0;
   const endDate = (metadata.end_date as string | undefined)
