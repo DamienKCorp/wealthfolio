@@ -9,6 +9,7 @@ import {
 import type { Quote } from "@/lib/types";
 import type { QuoteImport } from "@/lib/types/quote-import";
 import { isProjectedLoanBalance } from "./loan-balance";
+import { calculateLoanPayment, projectLoan } from "./loan-calculator";
 
 interface BuildLoanScheduleParams {
   assetId: string;
@@ -53,15 +54,7 @@ export function calculateMonthlyPayment(
   annualRate: number,
   paymentCount: number,
 ): number | null {
-  if (!Number.isFinite(principal) || principal < 0) return null;
-  if (!Number.isFinite(annualRate) || annualRate < 0) return null;
-  if (!Number.isInteger(paymentCount) || paymentCount <= 0) return null;
-  if (principal === 0) return 0;
-
-  const monthlyRate = annualRate / 100 / 12;
-  return monthlyRate > 0
-    ? (principal * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -paymentCount))
-    : principal / paymentCount;
+  return calculateLoanPayment({ principal, annualRate, paymentCount });
 }
 
 export function calculateRemainingPaymentCount(
@@ -94,14 +87,13 @@ export function calculateBalanceAfterPayments(
   if (completedPaymentCount === 0) return principal;
   if (completedPaymentCount >= totalPaymentCount) return 0;
 
-  const monthlyRate = annualRate / 100 / 12;
-  const balance =
-    monthlyRate === 0
-      ? principal - payment * completedPaymentCount
-      : principal * Math.pow(1 + monthlyRate, completedPaymentCount) -
-        payment * ((Math.pow(1 + monthlyRate, completedPaymentCount) - 1) / monthlyRate);
-
-  return Math.max(0, Math.round(balance * 100) / 100);
+  const projection = projectLoan({
+    principal,
+    annualRate,
+    paymentCount: totalPaymentCount,
+    paymentAmount: payment,
+  });
+  return projection[completedPaymentCount - 1]?.closingBalance ?? 0;
 }
 
 export function buildLoanSchedule({
@@ -115,25 +107,24 @@ export function buildLoanSchedule({
 }: BuildLoanScheduleParams): QuoteImport[] {
   if (startingBalance < 0 || annualRate < 0 || paymentCount <= 0) return [];
 
-  const monthlyRate = annualRate / 100 / 12;
-  const payment =
-    monthlyPayment ?? calculateMonthlyPayment(startingBalance, annualRate, paymentCount);
-  if (payment === null || !Number.isFinite(payment) || payment <= 0) return [];
-  let balance = startingBalance;
+  const projection = projectLoan({
+    principal: startingBalance,
+    annualRate,
+    paymentCount,
+    paymentAmount: monthlyPayment,
+  });
+  if (projection.length === 0) return [];
   const preserveEndOfMonth = isLastDayOfMonth(firstPaymentDate);
 
-  return Array.from({ length: paymentCount }, (_, index) => {
-    const interest = balance * monthlyRate;
-    balance = Math.max(0, balance - (payment - interest));
-
+  return projection.map((row, index) => {
     const nominalDate = addMonths(firstPaymentDate, index);
     const paymentDate = preserveEndOfMonth ? endOfMonth(nominalDate) : nominalDate;
     return {
       symbol: assetId,
       date: format(paymentDate, "yyyy-MM-dd"),
-      close: index === paymentCount - 1 ? 0 : Math.round(balance * 100) / 100,
+      close: row.closingBalance,
       currency,
-      notes: `loan_schedule|rate=${annualRate}|payment=${payment}`,
+      notes: `loan_schedule|rate=${annualRate}|payment=${row.payment}`,
       validationStatus: "valid" as const,
     };
   });
