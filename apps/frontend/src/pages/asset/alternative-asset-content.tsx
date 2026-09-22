@@ -52,6 +52,7 @@ import {
   LoanBalanceEventDialog,
 } from "./alternative-assets/components/loan-action-dialogs";
 import { LoanAmortizationSchedule } from "./alternative-assets/components/loan-amortization-schedule";
+import { LoanProgressSummary } from "./alternative-assets/components/loan-progress-summary";
 import { useAlternativeAssetMutations } from "./alternative-assets/hooks/use-alternative-asset-mutations";
 import {
   buildLoanSchedule,
@@ -624,6 +625,16 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   if (activeTab === "overview") {
     return (
       <div className="space-y-4">
+        {isLiability && (
+          <LoanProgressSummary
+            originalAmount={loanOriginalAmount}
+            currentBalance={currentBalance}
+            totalInterestPaid={totalInterestPaid}
+            quoteHistory={quoteHistory}
+            metadata={metadata}
+            currency={holding.currency}
+          />
+        )}
         {/* Main grid: Chart on left, Details on right */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {/* Left: Value history chart with value/gain/equity in header */}
