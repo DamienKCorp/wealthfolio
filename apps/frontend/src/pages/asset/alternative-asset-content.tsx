@@ -51,6 +51,7 @@ import {
   RenewLoanDialog,
   LoanBalanceEventDialog,
 } from "./alternative-assets/components/loan-action-dialogs";
+import { LoanAmortizationSchedule } from "./alternative-assets/components/loan-amortization-schedule";
 import { useAlternativeAssetMutations } from "./alternative-assets/hooks/use-alternative-asset-mutations";
 import {
   buildLoanSchedule,
@@ -777,6 +778,13 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   // History tab
   return (
     <>
+      {isLiability && (
+        <LoanAmortizationSchedule
+          quoteHistory={quoteHistory}
+          metadata={holding.metadata || {}}
+          currency={holding.currency}
+        />
+      )}
       <ValueHistoryDataGrid
         key={assetId}
         data={quoteHistory}
