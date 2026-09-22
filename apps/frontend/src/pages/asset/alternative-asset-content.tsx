@@ -49,15 +49,12 @@ import {
   CloseLoanDialog,
   RecalculateScheduleDialog,
 } from "./alternative-assets/components/loan-action-dialogs";
-import { importManualQuotes } from "@/adapters";
 import { useAlternativeAssetMutations } from "./alternative-assets/hooks/use-alternative-asset-mutations";
 import {
   buildLoanSchedule,
   calculateBalanceAfterPayments,
   calculateMonthlyPayment,
   calculateRemainingPaymentCount,
-  getObsoleteFutureQuoteIds,
-  splitLoanScheduleForPersistence,
 } from "./alternative-assets/lib/loan-schedule";
 import { useQuoteMutations } from "./hooks/use-quote-mutations";
 import { LinkedAssetSection, LinkedLiabilitiesSection } from "./linked-liabilities-card";
@@ -158,44 +155,14 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       ? storedMonthlyPayment
       : calculateMonthlyPayment(loanOriginalAmount, interestRate, totalMonths);
 
-  const persistLoanSchedule = async (schedule: ReturnType<typeof buildLoanSchedule>) => {
-    const { importableQuotes, payoffQuote } = splitLoanScheduleForPersistence(schedule);
-    if (importableQuotes.length > 0) await importManualQuotes(importableQuotes);
-    if (payoffQuote) {
-      await saveQuoteMutation.mutateAsync({
-        id: "",
-        assetId,
-        createdAt: new Date().toISOString(),
-        dataSource: "MANUAL",
-        timestamp: `${payoffQuote.date}T00:00:00Z`,
-        open: 0,
-        high: 0,
-        low: 0,
-        close: 0,
-        adjclose: 0,
-        volume: 0,
-        currency: payoffQuote.currency,
-        notes: "scheduled_payoff",
-      });
-    }
-  };
-
+  // Future instalments are projections, not market observations. They are
+  // recalculated from loan metadata and events and are deliberately not
+  // persisted as quotes. Existing generated quotes remain untouched for the
+  // compatibility/migration work planned in the next commit.
   const replaceGeneratedLoanSchedule = async (
-    schedule: ReturnType<typeof buildLoanSchedule>,
-    effectiveDate: Date,
-  ) => {
-    const { importableQuotes } = splitLoanScheduleForPersistence(schedule);
-    const obsoleteQuoteIds = getObsoleteFutureQuoteIds(
-      quoteHistory,
-      effectiveDate,
-      importableQuotes,
-    );
-
-    // Persist the replacement first. Old generated quotes are removed only
-    // after the new schedule has been accepted by the backend.
-    await persistLoanSchedule(schedule);
-    await Promise.all(obsoleteQuoteIds.map((quoteId) => deleteQuoteMutation.mutateAsync(quoteId)));
-  };
+    _schedule: ReturnType<typeof buildLoanSchedule>,
+    _effectiveDate: Date,
+  ) => undefined;
 
   const handleEarlyRepayment = async (
     date: Date,
@@ -232,10 +199,6 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       const metaUpdates: Record<string, string> = { ...existingMetadata };
 
       if (newBalance === 0) {
-        const obsoleteQuoteIds = getObsoleteFutureQuoteIds(quoteHistory, date, []);
-        await Promise.all(
-          obsoleteQuoteIds.map((quoteId) => deleteQuoteMutation.mutateAsync(quoteId)),
-        );
         await updateMetadataMutation.mutateAsync({
           assetId,
           metadata: {
@@ -309,8 +272,6 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       notes: "loan_closed",
     };
     await saveQuoteMutation.mutateAsync(quote);
-    const futureQuoteIds = getObsoleteFutureQuoteIds(quoteHistory, cappedDate, []);
-    await Promise.all(futureQuoteIds.map((quoteId) => deleteQuoteMutation.mutateAsync(quoteId)));
     const existingMetadata = Object.fromEntries(
       Object.entries(holding.metadata || {}).map(([k, v]) => [k, String(v)]),
     );

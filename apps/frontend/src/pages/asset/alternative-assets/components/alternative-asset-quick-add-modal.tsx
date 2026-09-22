@@ -30,15 +30,15 @@ import {
   liabilityQuickAddSchema,
 } from "./alternative-asset-quick-add-schema";
 import { useAlternativeAssetMutations } from "../hooks/use-alternative-asset-mutations";
-import { importManualQuotes, updateQuote } from "@/adapters";
+import { importManualQuotes } from "@/adapters";
 import {
   buildLoanSchedule,
   calculateBalanceAfterPayments,
   calculateMonthlyPayment,
   getRemainingScheduleWindow,
-  splitLoanScheduleForPersistence,
   type RemainingScheduleWindow,
 } from "../lib/loan-schedule";
+import { LOAN_PROJECTION_METADATA_KEY, serializeLoanProjectionMetadata } from "../lib/loan-events";
 import {
   AlternativeAssetKind,
   type CreateAlternativeAssetRequest,
@@ -256,6 +256,7 @@ export function AlternativeAssetQuickAddModal({
 
     const metadata: Record<string, string> = {};
     const isLiability = formData.kind === AlternativeAssetKind.LIABILITY;
+    const annualRate = formData.interestRate ? parseFloat(formData.interestRate) : 0;
     let currentValue =
       isLiability && !formData.currentValue
         ? (formData.purchasePrice ?? formData.currentValue)
@@ -333,6 +334,15 @@ export function AlternativeAssetQuickAddModal({
           : null;
         if (effectivePayment !== null) {
           metadata.current_monthly_payment = String(Math.round(effectivePayment * 100) / 100);
+          metadata[LOAN_PROJECTION_METADATA_KEY] = serializeLoanProjectionMetadata({
+            version: 1,
+            annualRate,
+            paymentAmount: effectivePayment,
+            frequency: "monthly",
+            firstPaymentDate: formatDateToISO(formData.purchaseDate),
+            paymentCount: totalPaymentCount,
+            termEndDate: formatDateToISO(computedEndDate),
+          });
         }
       }
     }
@@ -368,40 +378,10 @@ export function AlternativeAssetQuickAddModal({
         firstPaymentDate: formData.purchaseDate,
       });
       const historicalSchedule = contractualSchedule.filter((quote) => quote.date < balanceDay);
-      const futureSchedule = remainingSchedule
-        ? formData.currentValue
-          ? buildLoanSchedule({
-              assetId: response.assetId,
-              currency: formData.currency,
-              startingBalance: parseFloat(currentValue),
-              annualRate,
-              paymentCount: remainingSchedule.paymentCount,
-              firstPaymentDate: remainingSchedule.firstPaymentDate,
-            })
-          : contractualSchedule.filter((quote) => quote.date > balanceDay)
-        : [];
-      const fullSchedule = [...historicalSchedule, ...futureSchedule];
-      if (fullSchedule.length > 0) {
-        const { importableQuotes, payoffQuote } = splitLoanScheduleForPersistence(fullSchedule);
-        if (importableQuotes.length > 0) await importManualQuotes(importableQuotes);
-        if (payoffQuote) {
-          await updateQuote(response.assetId, {
-            id: "",
-            assetId: response.assetId,
-            createdAt: new Date().toISOString(),
-            dataSource: "MANUAL",
-            timestamp: `${payoffQuote.date}T00:00:00Z`,
-            open: 0,
-            high: 0,
-            low: 0,
-            close: 0,
-            adjclose: 0,
-            volume: 0,
-            currency: payoffQuote.currency,
-            notes: "scheduled_payoff",
-          });
-        }
-      }
+      // Historical instalments remain useful as an audit trail. Future
+      // instalments are projections and are calculated from metadata/events
+      // when displayed; they must not be persisted as market quotes.
+      if (historicalSchedule.length > 0) await importManualQuotes(historicalSchedule);
     }
 
     onAssetCreated?.(response);

@@ -1,6 +1,7 @@
 import { isValid, parseISO } from "date-fns";
 
 export const LOAN_EVENTS_METADATA_KEY = "loan_events";
+export const LOAN_PROJECTION_METADATA_KEY = "loan_projection";
 
 export type LoanPaymentFrequency = "monthly" | "biweekly" | "accelerated_biweekly";
 
@@ -58,6 +59,16 @@ export type LoanEvent =
   | LoanRenewalEvent;
 
 export type LoanMetadata = Record<string, unknown>;
+
+export interface LoanProjectionMetadata {
+  version: 1;
+  annualRate: number;
+  paymentAmount: number;
+  frequency: LoanPaymentFrequency;
+  firstPaymentDate: string;
+  paymentCount?: number;
+  termEndDate?: string;
+}
 
 function isFiniteNonNegative(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
@@ -123,4 +134,46 @@ export function appendLoanEvent(metadata: LoanMetadata, event: LoanEvent): LoanM
       left.effectiveDate.localeCompare(right.effectiveDate),
     ),
   };
+}
+
+/**
+ * Projection parameters are persisted as data, not as a collection of future
+ * quotes.  JSON is used because the asset metadata API accepts string values
+ * during asset creation as well as structured values when updated later.
+ */
+export function serializeLoanProjectionMetadata(projection: LoanProjectionMetadata): string {
+  return JSON.stringify(projection);
+}
+
+export function readLoanProjectionMetadata(
+  metadata: LoanMetadata | null | undefined,
+): LoanProjectionMetadata | null {
+  const raw = metadata?.[LOAN_PROJECTION_METADATA_KEY];
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== "object") return null;
+  const projection = value as Record<string, unknown>;
+  if (
+    projection.version !== 1 ||
+    !isFiniteNonNegative(projection.annualRate) ||
+    !isFiniteNonNegative(projection.paymentAmount) ||
+    !isFrequency(projection.frequency) ||
+    !isIsoDate(projection.firstPaymentDate)
+  ) {
+    return null;
+  }
+  if (
+    projection.paymentCount !== undefined &&
+    (!isFiniteNonNegative(projection.paymentCount) || !Number.isInteger(projection.paymentCount))
+  ) {
+    return null;
+  }
+  if (projection.termEndDate !== undefined && !isIsoDate(projection.termEndDate)) return null;
+  return projection as unknown as LoanProjectionMetadata;
 }

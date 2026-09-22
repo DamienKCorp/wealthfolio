@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   LOAN_EVENTS_METADATA_KEY,
+  LOAN_PROJECTION_METADATA_KEY,
   appendLoanEvent,
   isLoanEvent,
   readLoanEvents,
+  readLoanProjectionMetadata,
+  serializeLoanProjectionMetadata,
   type LoanMetadata,
 } from "./loan-events";
 
@@ -67,5 +70,23 @@ describe("loan events", () => {
     expect(next[LOAN_EVENTS_METADATA_KEY]).toEqual([
       { type: "extra_repayment", effectiveDate: "2026-05-01", amount: 2_000 },
     ]);
+  });
+
+  it("round-trips projection parameters without persisting future quotes", () => {
+    const projection = {
+      version: 1 as const,
+      annualRate: 3.04,
+      paymentAmount: 1_652.74,
+      frequency: "monthly" as const,
+      firstPaymentDate: "2025-07-07",
+      paymentCount: 300,
+      termEndDate: "2050-07-07",
+    };
+    const metadata: LoanMetadata = {
+      [LOAN_PROJECTION_METADATA_KEY]: serializeLoanProjectionMetadata(projection),
+    };
+
+    expect(readLoanProjectionMetadata(metadata)).toEqual(projection);
+    expect(readLoanProjectionMetadata({ [LOAN_PROJECTION_METADATA_KEY]: "not-json" })).toBeNull();
   });
 });
