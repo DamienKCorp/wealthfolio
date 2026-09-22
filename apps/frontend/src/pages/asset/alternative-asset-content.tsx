@@ -53,6 +53,7 @@ import {
 } from "./alternative-assets/components/loan-action-dialogs";
 import { LoanAmortizationSchedule } from "./alternative-assets/components/loan-amortization-schedule";
 import { LoanProgressSummary } from "./alternative-assets/components/loan-progress-summary";
+import { getLoanValuationSnapshot } from "./alternative-assets/lib/loan-valuation";
 import { useAlternativeAssetMutations } from "./alternative-assets/hooks/use-alternative-asset-mutations";
 import {
   buildLoanSchedule,
@@ -130,15 +131,16 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   const [extraRepaymentOpen, setExtraRepaymentOpen] = useState(false);
 
   // Loan-specific computations (used in history tab and handlers)
-  const latestConfirmedBalance = useMemo(
-    () => getLatestCurrentLoanBalance(quoteHistory),
-    [quoteHistory],
+  const metadata = useMemo(() => holding.metadata || {}, [holding.metadata]);
+  const isLiability = holding.kind.toLowerCase() === "liability";
+  const loanValuation = useMemo(
+    () => getLoanValuationSnapshot(holding.marketValue, metadata, quoteHistory),
+    [holding.marketValue, metadata, quoteHistory],
   );
   const currentBalance =
     holding.kind.toLowerCase() === "liability"
-      ? Math.abs(latestConfirmedBalance?.close ?? parseFloat(holding.marketValue))
+      ? loanValuation.currentBalance
       : Math.abs(parseFloat(holding.marketValue));
-  const metadata = useMemo(() => holding.metadata || {}, [holding.metadata]);
   const interestRate = metadata.interest_rate ? parseFloat(metadata.interest_rate as string) : 0;
   const endDate = (metadata.end_date as string | undefined)
     ? parseISO(metadata.end_date as string)
@@ -156,12 +158,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   const loanOriginationDate = (metadata.origination_date ?? metadata.purchase_date) as
     | string
     | undefined;
-  const loanOriginalAmount = Math.max(
-    0,
-    parseFloat(
-      ((metadata.original_amount ?? metadata.purchase_price) as string | undefined) ?? "0",
-    ) || 0,
-  );
+  const loanOriginalAmount = loanValuation.originalAmount ?? 0;
   const totalMonths =
     endDate && loanOriginationDate
       ? differenceInCalendarMonths(endDate, parseISO(loanOriginationDate))
@@ -504,12 +501,8 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       // For liabilities: derive from original_amount vs current balance so cost-basis
       // errors in the portfolio engine don't pollute the header display.
       if (holding.kind.toLowerCase() === "liability") {
-        const originalAmount = parseFloat(
-          ((holding.metadata?.original_amount ?? holding.metadata?.purchase_price) as
-            | string
-            | undefined) ?? "0",
-        );
-        const currentBal = Math.abs(parseFloat(holding.marketValue));
+        const originalAmount = loanValuation.originalAmount ?? 0;
+        const currentBal = currentBalance;
         if (originalAmount > 0) {
           const ga = currentBal - originalAmount; // negative = paid down (good)
           return { gainAmount: ga, gainPercent: ga / originalAmount };
@@ -544,6 +537,8 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     holding.kind,
     holding.metadata,
     holding.marketValue,
+    currentBalance,
+    loanValuation.originalAmount,
   ]);
 
   const handleIntervalSelect = (
@@ -556,8 +551,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     setDateRange(range);
   };
 
-  const isLiability = holding.kind.toLowerCase() === "liability";
-  const marketValue = parseFloat(holding.marketValue);
+  const marketValue = isLiability ? -currentBalance : parseFloat(holding.marketValue);
 
   // Calculate net equity for linkable assets
   const netEquity = useMemo(() => {
@@ -729,6 +723,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
             isLiability={isLiability}
             totalInterestPaid={isLiability ? totalInterestPaid : null}
             monthlyPayment={isLiability ? monthlyPayment : null}
+            currentBalance={isLiability ? currentBalance : undefined}
             className="col-span-1"
           />
         </div>
@@ -942,6 +937,7 @@ interface AlternativeAssetDetailCardProps {
   isLiability?: boolean;
   totalInterestPaid?: number | null;
   monthlyPayment?: number | null;
+  currentBalance?: number;
 }
 
 /**
@@ -1005,6 +1001,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
   isLiability,
   totalInterestPaid = null,
   monthlyPayment = null,
+  currentBalance,
   className,
 }) => {
   const numberFormatting = useNumberFormatting();
@@ -1020,7 +1017,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
   const liabilityProgress = useMemo(() => {
     if (!isLiability) return null;
 
-    const currentBalance = Math.abs(parseFloat(holding.marketValue));
+    const balance = currentBalance ?? Math.abs(parseFloat(holding.marketValue));
     // Check both new field (original_amount) and legacy field (purchase_price) for backwards compatibility
     const origAmountStr = (metadata.original_amount ?? metadata.purchase_price) as
       | string
@@ -1028,14 +1025,14 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
     const originalAmount = origAmountStr ? parseFloat(origAmountStr) : null;
 
     if (!originalAmount || originalAmount <= 0) {
-      return { amountPaid: null, percentPaid: null, originalAmount: null, currentBalance };
+      return { amountPaid: null, percentPaid: null, originalAmount: null, currentBalance: balance };
     }
 
-    const amountPaid = originalAmount - currentBalance;
+    const amountPaid = originalAmount - balance;
     const percentPaid = amountPaid / originalAmount;
 
-    return { amountPaid, percentPaid, originalAmount, currentBalance };
-  }, [isLiability, holding.marketValue, metadata.original_amount, metadata.purchase_price]);
+    return { amountPaid, percentPaid, originalAmount, currentBalance: balance };
+  }, [currentBalance, isLiability, metadata.original_amount, metadata.purchase_price]);
 
   // Build detail rows based on asset type
   const detailRows = useMemo(
@@ -1049,6 +1046,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
         dateFormatting,
         monthlyPayment,
         totalInterestPaid,
+        currentBalance,
       ),
     [
       kind,
@@ -1059,6 +1057,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
       dateFormatting,
       monthlyPayment,
       totalInterestPaid,
+      currentBalance,
     ],
   );
 
@@ -1229,6 +1228,7 @@ function getDetailRows(
   formatting: Pick<FormattingApi, "formatCalendarDate">,
   monthlyPayment: number | null = null,
   totalInterestPaid: number | null = null,
+  currentBalance: number | null = null,
 ): DetailRow[] {
   const rows: DetailRow[] = [];
 
@@ -1296,15 +1296,11 @@ function getDetailRows(
 
     case "liability": {
       // Current balance (shown prominently for liabilities)
-      const currentBalance = Math.abs(parseFloat(holding.marketValue));
+      const balance = currentBalance ?? Math.abs(parseFloat(holding.marketValue));
       rows.push({
         label: t("asset:altContent.current_balance"),
         value: (
-          <AmountDisplay
-            value={currentBalance}
-            currency={holding.currency}
-            isHidden={isBalanceHidden}
-          />
+          <AmountDisplay value={balance} currency={holding.currency} isHidden={isBalanceHidden} />
         ),
       });
 
