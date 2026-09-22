@@ -6,6 +6,7 @@ import {
   calculatePaymentCount,
   calculateRemainingPayments,
   projectLoan,
+  projectLoanFromEvents,
   projectLoanSchedule,
 } from "./loan-calculator";
 
@@ -99,5 +100,38 @@ describe("loan calculator", () => {
     );
     expect(format(regular.endDate!, "yyyy-MM-dd")).toBe("2050-11-18");
     expect(format(accelerated.endDate!, "yyyy-MM-dd")).toBe("2050-11-18");
+  });
+
+  it("applies dated balance and rate events only to the forward projection", () => {
+    const projection = projectLoanFromEvents({
+      principal: 1_000,
+      annualRate: 0,
+      paymentCount: 4,
+      paymentAmount: 250,
+      firstPaymentDate: new Date(2026, 0, 1),
+      events: [
+        { type: "balance_correction", effectiveDate: "2026-02-01", balance: 900 },
+        { type: "rate_change", effectiveDate: "2026-03-01", annualRate: 12 },
+      ],
+    });
+
+    expect(projection.rows[0]).toMatchObject({ closingBalance: 750, interest: 0 });
+    expect(projection.rows[1]).toMatchObject({ openingBalance: 900, closingBalance: 650 });
+    expect(projection.rows[2]?.interest).toBeCloseTo(6.5, 2);
+    expect(projection.rows[2]?.openingBalance).toBe(650);
+  });
+
+  it("applies an extra repayment and preserves the event order", () => {
+    const projection = projectLoanFromEvents({
+      principal: 1_000,
+      annualRate: 0,
+      paymentCount: 4,
+      paymentAmount: 250,
+      firstPaymentDate: new Date(2026, 0, 1),
+      events: [{ type: "extra_repayment", effectiveDate: "2026-02-01", amount: 100 }],
+    });
+
+    expect(projection.rows.map((row) => row.closingBalance)).toEqual([750, 400, 150, 0]);
+    expect(projection.rows[1]?.openingBalance).toBe(650);
   });
 });

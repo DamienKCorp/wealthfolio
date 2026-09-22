@@ -1,5 +1,5 @@
 import { addDays, addMonths, endOfMonth, isLastDayOfMonth } from "date-fns";
-import type { LoanPaymentFrequency } from "./loan-events";
+import { isLoanEvent, type LoanEvent, type LoanPaymentFrequency } from "./loan-events";
 
 export const LOAN_PERIODS_PER_YEAR: Record<LoanPaymentFrequency, number> = {
   monthly: 12,
@@ -33,6 +33,11 @@ export interface LoanProjection {
   remainingPayments: number;
   endDate: Date | null;
   finalPayment: DatedLoanProjectionRow | null;
+}
+
+export interface EventDrivenLoanProjectionInput extends LoanProjectionInput {
+  firstPaymentDate: Date;
+  events: LoanEvent[];
 }
 
 export function getLoanPeriodsPerYear(frequency: LoanPaymentFrequency = "monthly"): number {
@@ -194,4 +199,106 @@ export function projectLoanSchedule(
     endDate: datedRows.at(-1)?.paymentDate ?? null,
     finalPayment: datedRows.at(-1) ?? null,
   };
+}
+
+/**
+ * Project a loan from its initial terms and dated lifecycle events.
+ * Events are applied before the payment on their effective date, so the
+ * recorded history remains untouched and only the forward projection changes.
+ */
+export function projectLoanFromEvents(input: EventDrivenLoanProjectionInput): LoanProjection {
+  if (!(input.firstPaymentDate instanceof Date) || Number.isNaN(input.firstPaymentDate.getTime())) {
+    return { rows: [], remainingPayments: 0, endDate: null, finalPayment: null };
+  }
+
+  const events = [...input.events]
+    .filter((event) => isLoanEvent(event))
+    .sort((left, right) => left.effectiveDate.localeCompare(right.effectiveDate));
+  let balance = input.principal;
+  let annualRate = input.annualRate;
+  let paymentAmount = input.paymentAmount;
+  let frequency = input.frequency ?? "monthly";
+  let paymentDate = input.firstPaymentDate;
+  let eventIndex = 0;
+  const rows: DatedLoanProjectionRow[] = [];
+  const maxPayments = input.paymentCount;
+
+  for (let index = 0; index < maxPayments && balance > 0; index += 1) {
+    const paymentDay = formatProjectionDate(paymentDate);
+    while (eventIndex < events.length && events[eventIndex].effectiveDate <= paymentDay) {
+      const event = events[eventIndex];
+      switch (event.type) {
+        case "balance_correction":
+          balance = event.balance;
+          break;
+        case "extra_repayment":
+          balance = Math.max(0, balance - event.amount);
+          break;
+        case "rate_change":
+          annualRate = event.annualRate;
+          break;
+        case "payment_change":
+          paymentAmount = event.paymentAmount;
+          break;
+        case "payment_frequency_change":
+          frequency = event.frequency;
+          break;
+        case "renewal":
+          annualRate = event.annualRate;
+          paymentAmount = event.paymentAmount ?? paymentAmount;
+          frequency = event.frequency ?? frequency;
+          break;
+      }
+      eventIndex += 1;
+    }
+
+    if (balance <= 0) break;
+    const remainingPayments = Math.max(1, maxPayments - index);
+    const payment =
+      paymentAmount ??
+      calculateLoanPayment({
+        principal: balance,
+        annualRate,
+        paymentCount: remainingPayments,
+        frequency,
+      });
+    if (payment === null || payment <= 0) break;
+
+    const periodicRate = annualRate / 100 / getLoanPeriodsPerYear(frequency);
+    const openingBalance = balance;
+    const interest = openingBalance * periodicRate;
+    const principal = Math.min(openingBalance, Math.max(0, payment - interest));
+    balance = Math.max(0, openingBalance - principal);
+    const row: DatedLoanProjectionRow = {
+      paymentNumber: index + 1,
+      openingBalance,
+      interest,
+      principal,
+      payment,
+      closingBalance: Math.round(balance * 100) / 100,
+      paymentDate,
+    };
+    rows.push(row);
+
+    paymentDate = nextProjectionDate(paymentDate, frequency);
+  }
+
+  return {
+    rows,
+    remainingPayments: rows.length,
+    endDate: rows.at(-1)?.paymentDate ?? null,
+    finalPayment: rows.at(-1) ?? null,
+  };
+}
+
+function formatProjectionDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function nextProjectionDate(date: Date, frequency: LoanPaymentFrequency): Date {
+  if (frequency === "monthly") {
+    const next = addMonths(date, 1);
+    return isLastDayOfMonth(date) ? endOfMonth(next) : next;
+  }
+  return addDays(date, 14);
 }
