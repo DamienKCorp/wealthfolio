@@ -63,7 +63,6 @@ import {
 } from "./alternative-assets/lib/loan-schedule";
 import { useQuoteMutations } from "./hooks/use-quote-mutations";
 import { LinkedAssetSection, LinkedLiabilitiesSection } from "./linked-liabilities-card";
-import { getLatestCurrentLoanBalance } from "./alternative-assets/lib/loan-balance";
 import {
   appendLoanEvent,
   LOAN_EVENTS_METADATA_KEY,
