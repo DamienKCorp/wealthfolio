@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import {
   calculateLoanEndDate,
   calculateLoanPayment,
+  calculatePaymentCount,
   calculateRemainingPayments,
   projectLoan,
   projectLoanSchedule,
@@ -65,5 +66,38 @@ describe("loan calculator", () => {
     ]);
     expect(format(projection.endDate!, "yyyy-MM-dd")).toBe("2026-03-31");
     expect(projection.finalPayment?.closingBalance).toBe(0);
+  });
+
+  it("supports regular and accelerated biweekly frequencies", () => {
+    expect(calculatePaymentCount(25, "monthly")).toBe(300);
+    expect(calculatePaymentCount(25, "biweekly")).toBe(650);
+    expect(calculatePaymentCount(25, "accelerated_biweekly")).toBe(650);
+
+    const regular = projectLoanSchedule({
+      principal: 100_000,
+      annualRate: 3,
+      paymentCount: 650,
+      firstPaymentDate: new Date(2026, 0, 2),
+      frequency: "biweekly",
+    });
+    const accelerated = projectLoanSchedule({
+      principal: 100_000,
+      annualRate: 3,
+      paymentCount: 650,
+      firstPaymentDate: new Date(2026, 0, 2),
+      frequency: "accelerated_biweekly",
+    });
+
+    expect(accelerated.rows[0]?.payment).toBeCloseTo(
+      calculateLoanPayment({
+        principal: 100_000,
+        annualRate: 3,
+        paymentCount: 300,
+        frequency: "monthly",
+      })! / 2,
+      2,
+    );
+    expect(format(regular.endDate!, "yyyy-MM-dd")).toBe("2050-11-18");
+    expect(format(accelerated.endDate!, "yyyy-MM-dd")).toBe("2050-11-18");
   });
 });

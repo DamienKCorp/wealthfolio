@@ -1,8 +1,18 @@
+import { addDays, addMonths, endOfMonth, isLastDayOfMonth } from "date-fns";
+import type { LoanPaymentFrequency } from "./loan-events";
+
+export const LOAN_PERIODS_PER_YEAR: Record<LoanPaymentFrequency, number> = {
+  monthly: 12,
+  biweekly: 26,
+  accelerated_biweekly: 26,
+};
+
 export interface LoanProjectionInput {
   principal: number;
   annualRate: number;
   paymentCount: number;
   paymentAmount?: number;
+  frequency?: LoanPaymentFrequency;
 }
 
 export interface LoanProjectionRow {
@@ -25,6 +35,19 @@ export interface LoanProjection {
   finalPayment: DatedLoanProjectionRow | null;
 }
 
+export function getLoanPeriodsPerYear(frequency: LoanPaymentFrequency = "monthly"): number {
+  return LOAN_PERIODS_PER_YEAR[frequency];
+}
+
+export function calculatePaymentCount(
+  termYears: number,
+  frequency: LoanPaymentFrequency = "monthly",
+): number | null {
+  if (!Number.isFinite(termYears) || termYears <= 0) return null;
+  const count = Math.round(termYears * getLoanPeriodsPerYear(frequency));
+  return count > 0 ? count : null;
+}
+
 function validInput({ principal, annualRate, paymentCount }: LoanProjectionInput): boolean {
   return (
     Number.isFinite(principal) &&
@@ -41,11 +64,22 @@ export function calculateLoanPayment({
   principal,
   annualRate,
   paymentCount,
+  frequency,
 }: LoanProjectionInput): number | null {
   if (!validInput({ principal, annualRate, paymentCount })) return null;
   if (principal === 0) return 0;
 
-  const periodicRate = annualRate / 100 / 12;
+  if (frequency === "accelerated_biweekly") {
+    const monthlyPayment = calculateLoanPayment({
+      principal,
+      annualRate,
+      paymentCount: Math.round((paymentCount * 12) / 26),
+      frequency: "monthly",
+    });
+    return monthlyPayment === null ? null : monthlyPayment / 2;
+  }
+
+  const periodicRate = annualRate / 100 / getLoanPeriodsPerYear(frequency);
   return periodicRate === 0
     ? principal / paymentCount
     : (principal * periodicRate) / (1 - Math.pow(1 + periodicRate, -paymentCount));
@@ -56,6 +90,7 @@ export function calculateRemainingPayments(
   balance: number,
   annualRate: number,
   paymentAmount: number,
+  frequency: LoanPaymentFrequency = "monthly",
 ): number | null {
   if (
     !Number.isFinite(balance) ||
@@ -69,7 +104,7 @@ export function calculateRemainingPayments(
   }
   if (balance === 0) return 0;
 
-  const periodicRate = annualRate / 100 / 12;
+  const periodicRate = annualRate / 100 / getLoanPeriodsPerYear(frequency);
   if (periodicRate === 0) return Math.ceil(balance / paymentAmount);
   if (paymentAmount <= balance * periodicRate) return null;
 
@@ -79,12 +114,21 @@ export function calculateRemainingPayments(
 }
 
 /** Calculate the contractual date of the last payment. */
-export function calculateLoanEndDate(firstPaymentDate: Date, paymentCount: number): Date | null {
+export function calculateLoanEndDate(
+  firstPaymentDate: Date,
+  paymentCount: number,
+  frequency: LoanPaymentFrequency = "monthly",
+): Date | null {
   if (!(firstPaymentDate instanceof Date) || Number.isNaN(firstPaymentDate.getTime())) return null;
   if (!Number.isInteger(paymentCount) || paymentCount <= 0) return null;
 
-  const nominalDate = addMonths(firstPaymentDate, paymentCount - 1);
-  return isLastDayOfMonth(firstPaymentDate) ? endOfMonth(nominalDate) : nominalDate;
+  const nominalDate =
+    frequency === "monthly"
+      ? addMonths(firstPaymentDate, paymentCount - 1)
+      : addDays(firstPaymentDate, (paymentCount - 1) * 14);
+  return frequency === "monthly" && isLastDayOfMonth(firstPaymentDate)
+    ? endOfMonth(nominalDate)
+    : nominalDate;
 }
 
 /**
@@ -98,7 +142,7 @@ export function projectLoan(input: LoanProjectionInput): LoanProjectionRow[] {
   const payment = input.paymentAmount ?? calculateLoanPayment(input);
   if (payment === null || !Number.isFinite(payment) || payment <= 0) return [];
 
-  const periodicRate = input.annualRate / 100 / 12;
+  const periodicRate = input.annualRate / 100 / getLoanPeriodsPerYear(input.frequency ?? "monthly");
   let balance = input.principal;
 
   return Array.from({ length: input.paymentCount }, (_, index) => {
@@ -131,9 +175,13 @@ export function projectLoanSchedule(
     return { rows: [], remainingPayments: 0, endDate: null, finalPayment: null };
   }
 
-  const preserveEndOfMonth = isLastDayOfMonth(input.firstPaymentDate);
+  const frequency = input.frequency ?? "monthly";
+  const preserveEndOfMonth = frequency === "monthly" && isLastDayOfMonth(input.firstPaymentDate);
   const datedRows = rows.map((row, index) => {
-    const nominalDate = addMonths(input.firstPaymentDate, index);
+    const nominalDate =
+      frequency === "monthly"
+        ? addMonths(input.firstPaymentDate, index)
+        : addDays(input.firstPaymentDate, index * 14);
     return {
       ...row,
       paymentDate: preserveEndOfMonth ? endOfMonth(nominalDate) : nominalDate,
