@@ -81,6 +81,8 @@ interface ValueHistoryDataGridProps {
   onEarlyRepayment?: () => void;
   onCloseLoan?: () => void;
   onRecalculateSchedule?: () => void;
+  onBalanceCorrection?: () => void;
+  onExtraRepayment?: () => void;
 }
 
 // Generate a temporary ID for new entries
@@ -157,6 +159,8 @@ export function ValueHistoryDataGrid({
   onEarlyRepayment,
   onCloseLoan,
   onRecalculateSchedule,
+  onBalanceCorrection,
+  onExtraRepayment,
 }: ValueHistoryDataGridProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobileViewport();
@@ -899,6 +903,8 @@ export function ValueHistoryDataGrid({
         onEarlyRepayment={onEarlyRepayment}
         onCloseLoan={onCloseLoan}
         onRecalculateSchedule={onRecalculateSchedule}
+        onBalanceCorrection={onBalanceCorrection}
+        onExtraRepayment={onExtraRepayment}
       />
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-md border">

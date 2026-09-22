@@ -15,6 +15,8 @@ interface ValueHistoryToolbarProps {
   onEarlyRepayment?: () => void;
   onCloseLoan?: () => void;
   onRecalculateSchedule?: () => void;
+  onBalanceCorrection?: () => void;
+  onExtraRepayment?: () => void;
 }
 
 export function ValueHistoryToolbar({
@@ -31,6 +33,8 @@ export function ValueHistoryToolbar({
   onEarlyRepayment,
   onCloseLoan,
   onRecalculateSchedule,
+  onBalanceCorrection,
+  onExtraRepayment,
 }: ValueHistoryToolbarProps) {
   const { t } = useTranslation();
 
@@ -60,6 +64,18 @@ export function ValueHistoryToolbar({
           <Button variant="outline" size="sm" onClick={onRecalculateSchedule} disabled={isSaving}>
             <Icons.RefreshCw className="mr-2 h-4 w-4" />
             {t("asset:loanActions.recalculate_schedule")}
+          </Button>
+        )}
+
+        {isLiability && onBalanceCorrection && (
+          <Button variant="outline" size="sm" onClick={onBalanceCorrection} disabled={isSaving}>
+            {t("asset:loanActions.recalculate_schedule")}
+          </Button>
+        )}
+
+        {isLiability && onExtraRepayment && (
+          <Button variant="outline" size="sm" onClick={onExtraRepayment} disabled={isSaving}>
+            {t("asset:loanActions.early_repayment")}
           </Button>
         )}
 

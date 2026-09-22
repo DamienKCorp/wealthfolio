@@ -531,3 +531,94 @@ export function RenewLoanDialog({
     </Dialog>
   );
 }
+
+interface LoanBalanceEventDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  mode: "balance_correction" | "extra_repayment";
+  currentBalance: number;
+  onSubmit: (date: Date, amount: number) => Promise<void>;
+}
+
+export function LoanBalanceEventDialog({
+  open,
+  onOpenChange,
+  mode,
+  currentBalance,
+  onSubmit,
+}: LoanBalanceEventDialogProps) {
+  const { t } = useTranslation();
+  const [date, setDate] = useState<Date>(() => new Date());
+  const [amount, setAmount] = useState<number>(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isCorrection = mode === "balance_correction";
+  const invalid = amount <= 0 || (!isCorrection && amount > currentBalance) || date > new Date();
+
+  useEffect(() => {
+    if (!open) return;
+    setDate(new Date());
+    setAmount(0);
+  }, [open]);
+
+  const handleSubmit = async () => {
+    if (invalid || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onSubmit(date, amount);
+      onOpenChange(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {t(
+              isCorrection
+                ? "asset:loanActions.recalculate_schedule"
+                : "asset:loanActions.early_repayment",
+            )}
+          </DialogTitle>
+          <DialogDescription>{t("asset:loanActions.recalculate_description")}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>{t("asset:loanActions.repayment_date")}</Label>
+            <DatePickerInput value={date} onChange={(value) => value && setDate(value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>
+              {t(
+                isCorrection
+                  ? "asset:loanActions.recalculate_current_balance"
+                  : "asset:loanActions.repayment_amount",
+              )}
+            </Label>
+            <MoneyInput value={amount} onValueChange={(value) => setAmount(value ?? 0)} />
+          </div>
+          {invalid && (
+            <p className="text-destructive text-sm" role="alert">
+              {t(
+                !isCorrection && amount > currentBalance
+                  ? "asset:loanActions.validation.amount_exceeds_balance"
+                  : "asset:quickAdd.validation.invalid",
+              )}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+            {t("common:cancel")}
+          </Button>
+          <Button onClick={handleSubmit} disabled={invalid || isSubmitting}>
+            {isSubmitting && <Icons.Spinner className="mr-2 h-4 w-4 animate-spin" />}
+            {t("asset:loanActions.recalculate_confirm")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

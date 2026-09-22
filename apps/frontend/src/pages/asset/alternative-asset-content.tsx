@@ -49,6 +49,7 @@ import {
   CloseLoanDialog,
   RecalculateScheduleDialog,
   RenewLoanDialog,
+  LoanBalanceEventDialog,
 } from "./alternative-assets/components/loan-action-dialogs";
 import { useAlternativeAssetMutations } from "./alternative-assets/hooks/use-alternative-asset-mutations";
 import {
@@ -63,6 +64,7 @@ import { getLatestCurrentLoanBalance } from "./alternative-assets/lib/loan-balan
 import {
   appendLoanEvent,
   LOAN_EVENTS_METADATA_KEY,
+  type LoanEvent,
   type LoanMetadata,
 } from "./alternative-assets/lib/loan-events";
 
@@ -122,6 +124,8 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   const [closeLoanOpen, setCloseLoanOpen] = useState(false);
   const [recalculateScheduleOpen, setRecalculateScheduleOpen] = useState(false);
   const [renewLoanOpen, setRenewLoanOpen] = useState(false);
+  const [balanceCorrectionOpen, setBalanceCorrectionOpen] = useState(false);
+  const [extraRepaymentOpen, setExtraRepaymentOpen] = useState(false);
 
   // Loan-specific computations (used in history tab and handlers)
   const latestConfirmedBalance = useMemo(
@@ -419,6 +423,41 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     await updateMetadataMutation.mutateAsync({ assetId, metadata: updates });
     await invalidateQuoteQueries();
     setRenewLoanOpen(false);
+  };
+
+  const handleBalanceEvent = async (
+    mode: "balance_correction" | "extra_repayment",
+    effectiveDate: Date,
+    amount: number,
+  ) => {
+    const existingMetadata = Object.fromEntries(
+      Object.entries(holding.metadata || {}).map(([key, value]) => [key, String(value)]),
+    );
+    const metadata = Object.fromEntries(
+      Object.entries(existingMetadata).map(([key, value]) => {
+        if (key !== LOAN_EVENTS_METADATA_KEY) return [key, value];
+        try {
+          return [key, JSON.parse(value)];
+        } catch {
+          return [key, []];
+        }
+      }),
+    ) as LoanMetadata;
+    const event: LoanEvent =
+      mode === "balance_correction"
+        ? { type: mode, effectiveDate: formatDateISO(effectiveDate), balance: amount }
+        : { type: mode, effectiveDate: formatDateISO(effectiveDate), amount };
+    const nextMetadata = appendLoanEvent(metadata, event);
+    const updates: Record<string, string> = Object.fromEntries(
+      Object.entries(nextMetadata).map(([key, value]) => [
+        key,
+        key === LOAN_EVENTS_METADATA_KEY ? JSON.stringify(value) : String(value),
+      ]),
+    );
+    await updateMetadataMutation.mutateAsync({ assetId, metadata: updates });
+    await invalidateQuoteQueries();
+    setBalanceCorrectionOpen(false);
+    setExtraRepaymentOpen(false);
   };
 
   // Filter chart data by date range
@@ -755,6 +794,8 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         onEarlyRepayment={isLiability ? () => setEarlyRepaymentOpen(true) : undefined}
         onCloseLoan={isLiability ? () => setCloseLoanOpen(true) : undefined}
         onRecalculateSchedule={isLiability ? () => setRenewLoanOpen(true) : undefined}
+        onBalanceCorrection={isLiability ? () => setBalanceCorrectionOpen(true) : undefined}
+        onExtraRepayment={isLiability ? () => setExtraRepaymentOpen(true) : undefined}
       />
       {isLiability && (
         <>
@@ -793,6 +834,20 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
             interestRate={interestRate}
             endDate={endDate}
             onSubmit={handleRenewLoan}
+          />
+          <LoanBalanceEventDialog
+            open={balanceCorrectionOpen}
+            onOpenChange={setBalanceCorrectionOpen}
+            mode="balance_correction"
+            currentBalance={currentBalance}
+            onSubmit={(date, amount) => handleBalanceEvent("balance_correction", date, amount)}
+          />
+          <LoanBalanceEventDialog
+            open={extraRepaymentOpen}
+            onOpenChange={setExtraRepaymentOpen}
+            mode="extra_repayment"
+            currentBalance={currentBalance}
+            onSubmit={(date, amount) => handleBalanceEvent("extra_repayment", date, amount)}
           />
         </>
       )}
