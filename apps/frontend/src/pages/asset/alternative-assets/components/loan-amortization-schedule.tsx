@@ -21,6 +21,7 @@ export function LoanAmortizationSchedule({
   const { t } = useTranslation();
   const rows = useMemo(() => {
     const remaining = getRemainingLoanProjection(metadata, quoteHistory);
+    const periodsPerYear = remaining?.frequency === "monthly" ? 12 : 26;
     const events = readLoanEvents(metadata);
     const historicalDays = new Set<string>();
     const parsedOriginalAmount = Number(metadata.original_amount ?? metadata.purchase_price);
@@ -47,7 +48,7 @@ export function LoanAmortizationSchedule({
           extraRepayment !== undefined
             ? 0
             : rate !== null && openingBalance !== null
-              ? openingBalance * (rate / 100 / 12)
+              ? openingBalance * (rate / 100 / periodsPerYear)
               : undefined;
         previousBalance = Math.abs(quote.close);
         return {

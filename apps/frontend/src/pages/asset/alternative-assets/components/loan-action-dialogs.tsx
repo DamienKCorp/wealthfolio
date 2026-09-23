@@ -9,10 +9,10 @@ import {
 } from "@wealthfolio/ui/components/ui/dialog";
 import { Input } from "@wealthfolio/ui/components/ui/input";
 import { Label } from "@wealthfolio/ui/components/ui/label";
-import { differenceInCalendarMonths } from "date-fns";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { calculateMonthlyPayment } from "../lib/loan-schedule";
+import type { LoanPaymentFrequency } from "../lib/loan-events";
 
 interface CloseLoanDialogProps {
   open: boolean;
@@ -94,6 +94,8 @@ interface RecalculateScheduleDialogProps {
   currency: string;
   interestRate: number;
   endDate: Date | null;
+  frequency: LoanPaymentFrequency;
+  remainingPayments: number;
   onSubmit: (newRate: number) => Promise<void>;
 }
 
@@ -104,6 +106,8 @@ export function RecalculateScheduleDialog({
   currency,
   interestRate,
   endDate,
+  frequency,
+  remainingPayments,
   onSubmit,
 }: RecalculateScheduleDialogProps) {
   const { t, i18n } = useTranslation();
@@ -114,11 +118,14 @@ export function RecalculateScheduleDialog({
     if (open) setNewRate(String(interestRate));
   }, [interestRate, open]);
 
-  const today = new Date();
-  const remainingMonths = endDate ? Math.max(1, differenceInCalendarMonths(endDate, today)) : 0;
   const parsedRate = parseFloat(newRate);
   const isRateInvalid = !Number.isFinite(parsedRate) || parsedRate < 0 || parsedRate > 100;
-  const newMonthlyPayment = calculateMonthlyPayment(currentBalance, parsedRate, remainingMonths);
+  const newPayment = calculateMonthlyPayment(
+    currentBalance,
+    parsedRate,
+    remainingPayments,
+    frequency,
+  );
 
   const handleSubmit = async () => {
     if (isSubmitting) return;
@@ -146,9 +153,9 @@ export function RecalculateScheduleDialog({
               <AmountDisplay value={currentBalance} currency={currency} />
             </span>
             <span className="text-muted-foreground">
-              {t("asset:loanActions.recalculate_remaining_months")}
+              {t("asset:loanActions.remaining_payments")}
             </span>
-            <span className="text-right font-medium">{remainingMonths}</span>
+            <span className="text-right font-medium">{remainingPayments}</span>
             {endDate && (
               <>
                 <span className="text-muted-foreground">{t("asset:altContent.end_date")}</span>
@@ -172,13 +179,11 @@ export function RecalculateScheduleDialog({
               disabled={isSubmitting}
             />
           </div>
-          {newMonthlyPayment !== null && (
+          {newPayment !== null && (
             <div className="bg-muted rounded-md px-3 py-2 text-sm">
-              <span className="text-muted-foreground">
-                {t("asset:loanActions.new_monthly_payment")}:{" "}
-              </span>
+              <span className="text-muted-foreground">{t("asset:valueHistory.payment")}: </span>
               <span className="font-medium">
-                <AmountDisplay value={newMonthlyPayment} currency={currency} />
+                <AmountDisplay value={newPayment} currency={currency} />
               </span>
             </div>
           )}
@@ -194,7 +199,7 @@ export function RecalculateScheduleDialog({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={isSubmitting || remainingMonths <= 0 || isRateInvalid}
+            disabled={isSubmitting || remainingPayments <= 0 || isRateInvalid}
           >
             {isSubmitting && <Icons.Spinner className="mr-2 h-4 w-4 animate-spin" />}
             {t("asset:loanActions.recalculate_confirm")}

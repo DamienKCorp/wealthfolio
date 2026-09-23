@@ -30,6 +30,7 @@ import { useIsMobileViewport } from "@/hooks/use-platform";
 import { toast } from "@wealthfolio/ui/components/ui/use-toast";
 import { ValueHistoryToolbar } from "./value-history-toolbar";
 import { format, isLastDayOfMonth } from "date-fns";
+import { readLoanProjectionMetadata } from "../lib/loan-events";
 
 const MOBILE_PAGE_SIZE = 20;
 
@@ -72,6 +73,8 @@ interface ValueHistoryDataGridProps {
   loanOriginalAmount?: number;
   /** Contractual first payment date; used to distinguish balance snapshots from payments */
   loanOriginationDate?: Date;
+  /** Loan metadata used to determine the periodic interest rate. */
+  loanMetadata?: Record<string, unknown>;
   /** Callback to save a quote */
   onSaveQuote: (quote: Quote) => Promise<void>;
   /** Callback to delete a quote */
@@ -154,6 +157,7 @@ export function ValueHistoryDataGrid({
   interestRate,
   loanOriginalAmount,
   loanOriginationDate,
+  loanMetadata,
   onSaveQuote,
   onDeleteQuote,
   onPersistComplete,
@@ -202,7 +206,9 @@ export function ValueHistoryDataGrid({
     if (!isLiability || interestRate === undefined || interestRate <= 0) {
       return new Map<string, { capital: number; interest: number }>();
     }
-    const monthlyRate = interestRate / 100 / 12;
+    const projectionMetadata = readLoanProjectionMetadata(loanMetadata ?? {});
+    const periodsPerYear = projectionMetadata?.frequency === "monthly" ? 12 : 26;
+    const periodicRate = interestRate / 100 / periodsPerYear;
     const sortedAsc = [...localEntries].sort((a, b) => a.date.getTime() - b.date.getTime());
     const result = new Map<string, { capital: number; interest: number }>();
     // The origination entry represents the first paid instalment. Use the
@@ -225,8 +231,8 @@ export function ValueHistoryDataGrid({
       if (!isScheduledPayment && !isEarlyRepayment && !isContractualPaymentDate) continue;
       const scheduleRate = /(?:^|\|)rate=([\d.]+)/.exec(curr.notes ?? "")?.[1];
       const effectiveMonthlyRate = scheduleRate
-        ? Number.parseFloat(scheduleRate) / 100 / 12
-        : monthlyRate;
+        ? Number.parseFloat(scheduleRate) / 100 / periodsPerYear
+        : periodicRate;
       const repaymentAmount = isEarlyRepayment
         ? Number.parseFloat(curr.notes?.split(":")[1] ?? "")
         : Number.NaN;
@@ -241,7 +247,14 @@ export function ValueHistoryDataGrid({
       result.set(curr.id, { capital, interest });
     }
     return result;
-  }, [isLiability, interestRate, loanOriginalAmount, loanOriginationDate, localEntries]);
+  }, [
+    isLiability,
+    interestRate,
+    loanMetadata,
+    loanOriginalAmount,
+    loanOriginationDate,
+    localEntries,
+  ]);
 
   // Column definitions
   const columnHelper = createColumnHelper<ValueHistoryEntry>();
