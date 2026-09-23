@@ -177,6 +177,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     [isLiability, metadata, quoteHistory],
   );
   const loanFrequency = remainingLoanProjection?.frequency ?? storedFrequency;
+  const activeInterestRate = remainingLoanProjection?.annualRate ?? interestRate;
   const endDate = (metadata.end_date as string | undefined)
     ? parseISO(metadata.end_date as string)
     : estimateEndDate(
@@ -640,6 +641,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
             isLiability={isLiability}
             totalInterestPaid={isLiability ? totalInterestPaid : null}
             monthlyPayment={isLiability ? monthlyPayment : null}
+            interestRate={isLiability ? activeInterestRate : undefined}
             currentBalance={isLiability ? currentBalance : undefined}
             className="col-span-1"
           />
@@ -846,6 +848,7 @@ interface AlternativeAssetDetailCardProps {
   isLiability?: boolean;
   totalInterestPaid?: number | null;
   monthlyPayment?: number | null;
+  interestRate?: number;
   currentBalance?: number;
 }
 
@@ -910,6 +913,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
   isLiability,
   totalInterestPaid = null,
   monthlyPayment = null,
+  interestRate,
   currentBalance,
   className,
 }) => {
@@ -955,6 +959,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
         dateFormatting,
         monthlyPayment,
         totalInterestPaid,
+        interestRate,
         currentBalance,
       ),
     [
@@ -966,6 +971,7 @@ const AlternativeAssetDetailCard: React.FC<AlternativeAssetDetailCardProps> = ({
       dateFormatting,
       monthlyPayment,
       totalInterestPaid,
+      interestRate,
       currentBalance,
     ],
   );
@@ -1137,6 +1143,7 @@ function getDetailRows(
   formatting: Pick<FormattingApi, "formatCalendarDate">,
   monthlyPayment: number | null = null,
   totalInterestPaid: number | null = null,
+  interestRate: number | undefined = undefined,
   currentBalance: number | null = null,
 ): DetailRow[] {
   const rows: DetailRow[] = [];
@@ -1231,9 +1238,11 @@ function getDetailRows(
       }
 
       // Interest rate
-      const interestRate = metadata.interest_rate as string | undefined;
-      if (interestRate) {
-        rows.push({ label: t("asset:altContent.interest_rate"), value: `${interestRate}%` });
+      if (interestRate !== undefined && Number.isFinite(interestRate)) {
+        rows.push({
+          label: t("asset:altContent.interest_rate"),
+          value: `${interestRate}%`,
+        });
       }
 
       // Monthly payment
@@ -1295,6 +1304,7 @@ function getDetailRows(
             holding.marketValue,
             annualRateForEst,
             storedPaymentForEst,
+            metadata.payment_frequency === "biweekly" ? "biweekly" : "monthly",
           )
         : null;
 
