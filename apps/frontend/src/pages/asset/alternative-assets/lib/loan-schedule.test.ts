@@ -180,6 +180,21 @@ describe("loan schedule replacement", () => {
     });
   });
 
+  it("builds biweekly schedules with the selected periodic rate", () => {
+    const schedule = buildLoanSchedule({
+      assetId: "loan",
+      currency: "EUR",
+      startingBalance: 10_000,
+      annualRate: 4,
+      paymentCount: 3,
+      firstPaymentDate: new Date(2026, 0, 7),
+      frequency: "biweekly",
+    });
+
+    expect(schedule.map((quote) => quote.date)).toEqual(["2026-01-07", "2026-01-21", "2026-02-04"]);
+    expect(schedule[0]?.notes).toContain("payment=");
+  });
+
   it("generates every historical payment before a later balance date", () => {
     const balanceDay = "2026-09-09";
     const history = buildLoanSchedule({

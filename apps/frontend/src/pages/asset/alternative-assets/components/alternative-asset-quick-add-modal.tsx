@@ -32,13 +32,17 @@ import { useAlternativeAssetMutations } from "../hooks/use-alternative-asset-mut
 import { importManualQuotes } from "@/adapters";
 import {
   buildLoanSchedule,
-  calculateMonthlyPayment,
   getRemainingScheduleWindow,
   resolveLoanBalanceAtDate,
   type RemainingScheduleWindow,
 } from "../lib/loan-schedule";
 import { LOAN_PROJECTION_METADATA_KEY, serializeLoanProjectionMetadata } from "../lib/loan-events";
-import { calculateLoanEndDate } from "../lib/loan-calculator";
+import {
+  calculateLoanEndDate,
+  calculateLoanPayment,
+  calculatePaymentCount,
+} from "../lib/loan-calculator";
+import type { LoanPaymentFrequency } from "../lib/loan-events";
 import {
   AlternativeAssetKind,
   type CreateAlternativeAssetRequest,
@@ -135,6 +139,7 @@ interface FormData {
   linkedAssetId?: string;
   loanTerm?: string;
   interestRate?: string;
+  paymentFrequency?: LoanPaymentFrequency;
   automaticSchedule?: boolean;
 }
 
@@ -184,7 +189,9 @@ export function AlternativeAssetQuickAddModal({
     currentValue: "",
     valueDate: new Date(),
     linkedAssetId: initialLinkedAssetId,
+    liabilityType: "mortgage",
     automaticSchedule: true,
+    paymentFrequency: "monthly",
   });
 
   const { createMutation } = useAlternativeAssetMutations();
@@ -202,8 +209,9 @@ export function AlternativeAssetQuickAddModal({
         currentValue: "",
         valueDate: defaultOriginationDate || new Date(),
         linkedAssetId: initialLinkedAssetId,
-        liabilityType: defaultLiabilityType,
+        liabilityType: defaultLiabilityType ?? "mortgage",
         automaticSchedule: true,
+        paymentFrequency: "monthly",
       });
     }
   }, [
@@ -314,9 +322,10 @@ export function AlternativeAssetQuickAddModal({
 
     if (isLiability) {
       if (!formData.automaticSchedule) metadata.tracking_mode = "manual";
-      if (formData.liabilityType) {
-        metadata.sub_type = formData.liabilityType;
-        metadata.liability_type = formData.liabilityType;
+      const liabilityType = formData.liabilityType ?? "mortgage";
+      if (liabilityType) {
+        metadata.sub_type = liabilityType;
+        metadata.liability_type = liabilityType;
       }
       if (formData.purchasePrice) metadata.original_amount = formData.purchasePrice;
       if (formData.purchaseDate && formData.automaticSchedule) {
@@ -324,8 +333,18 @@ export function AlternativeAssetQuickAddModal({
       }
       if (formData.interestRate) metadata.interest_rate = formData.interestRate;
       if (formData.automaticSchedule && formData.loanTerm && formData.purchaseDate) {
-        const termMonths = Math.round(parseFloat(formData.loanTerm) * 12);
-        const computedEndDate = calculateLoanEndDate(formData.purchaseDate, termMonths);
+        const frequency = formData.paymentFrequency ?? "monthly";
+        const termYears = parseFloat(formData.loanTerm);
+        totalPaymentCount = calculatePaymentCount(termYears, frequency) ?? 0;
+        if (totalPaymentCount === 0) {
+          setValidationError("asset:quickAdd.validation.invalid");
+          return;
+        }
+        const computedEndDate = calculateLoanEndDate(
+          formData.purchaseDate,
+          totalPaymentCount,
+          frequency,
+        );
         if (!computedEndDate) {
           setValidationError("asset:quickAdd.validation.invalid");
           return;
@@ -335,8 +354,8 @@ export function AlternativeAssetQuickAddModal({
           formData.purchaseDate,
           formData.valueDate,
           computedEndDate,
+          frequency,
         );
-        totalPaymentCount = termMonths;
         completedPaymentCount = Math.min(
           totalPaymentCount,
           totalPaymentCount - (remainingSchedule?.paymentCount ?? 0),
@@ -350,23 +369,26 @@ export function AlternativeAssetQuickAddModal({
           formData.interestRate ? parseFloat(formData.interestRate) : 0,
           totalPaymentCount,
           completedPaymentCount,
+          frequency,
         );
         if (balanceAtDate !== null) currentValue = String(balanceAtDate);
         balanceQuoteDate = formData.valueDate;
         const effectivePayment = remainingSchedule
-          ? calculateMonthlyPayment(
-              parseFloat(currentValue),
-              formData.interestRate ? parseFloat(formData.interestRate) : 0,
-              remainingSchedule.paymentCount,
-            )
+          ? calculateLoanPayment({
+              principal: parseFloat(currentValue),
+              annualRate: formData.interestRate ? parseFloat(formData.interestRate) : 0,
+              paymentCount: remainingSchedule.paymentCount,
+              frequency,
+            })
           : null;
         if (effectivePayment !== null) {
           metadata.current_monthly_payment = String(Math.round(effectivePayment * 100) / 100);
+          metadata.payment_frequency = frequency;
           metadata[LOAN_PROJECTION_METADATA_KEY] = serializeLoanProjectionMetadata({
             version: 1,
             annualRate,
             paymentAmount: effectivePayment,
-            frequency: "monthly",
+            frequency,
             firstPaymentDate: formatDateToISO(formData.purchaseDate),
             paymentCount: totalPaymentCount,
             termEndDate: formatDateToISO(computedEndDate),
@@ -403,6 +425,7 @@ export function AlternativeAssetQuickAddModal({
         annualRate,
         paymentCount: totalPaymentCount,
         firstPaymentDate: formData.purchaseDate,
+        frequency: formData.paymentFrequency ?? "monthly",
       });
       const historicalSchedule = contractualSchedule.filter((quote) => quote.date < balanceDay);
       // Historical instalments remain useful as an audit trail. Future
@@ -741,6 +764,28 @@ export function AlternativeAssetQuickAddModal({
                           </span>
                         </div>
                       </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-foreground text-sm font-medium">
+                        {t("asset:loanActions.payment_frequency")}
+                      </Label>
+                      <ResponsiveSelect
+                        value={formData.paymentFrequency || "monthly"}
+                        onValueChange={(value) =>
+                          updateFormData("paymentFrequency", value as LoanPaymentFrequency)
+                        }
+                        options={[
+                          {
+                            value: "monthly",
+                            label: t("asset:loanActions.monthly"),
+                          },
+                          {
+                            value: "biweekly",
+                            label: t("asset:loanActions.biweekly"),
+                          },
+                        ]}
+                        sheetTitle={t("asset:loanActions.payment_frequency")}
+                      />
                     </div>
                   </>
                 )}

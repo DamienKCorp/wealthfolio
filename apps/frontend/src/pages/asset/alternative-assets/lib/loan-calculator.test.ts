@@ -137,6 +137,22 @@ describe("loan calculator", () => {
     expect(accelerated.finalPayment!.payment).toBeLessThan(accelerated.rows[0].payment);
   });
 
+  it("uses fourteen-day intervals for biweekly payment dates", () => {
+    const projection = projectLoanSchedule({
+      principal: 10_000,
+      annualRate: 4,
+      paymentCount: 3,
+      firstPaymentDate: new Date(2026, 0, 7),
+      frequency: "biweekly",
+    });
+
+    expect(projection.rows.map((row) => format(row.paymentDate, "yyyy-MM-dd"))).toEqual([
+      "2026-01-07",
+      "2026-01-21",
+      "2026-02-04",
+    ]);
+  });
+
   it("applies dated balance and rate events only to the forward projection", () => {
     const projection = projectLoanFromEvents({
       principal: 1_000,

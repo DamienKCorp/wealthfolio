@@ -1,4 +1,4 @@
-import { addMonths, endOfMonth, format, isAfter, isLastDayOfMonth } from "date-fns";
+import { endOfMonth, format, isAfter, isLastDayOfMonth } from "date-fns";
 import type { Quote } from "@/lib/types";
 import type { QuoteImport } from "@/lib/types/quote-import";
 import { isProjectedLoanBalance } from "./loan-balance";
@@ -18,6 +18,7 @@ interface BuildLoanScheduleParams {
   paymentCount: number;
   firstPaymentDate: Date;
   monthlyPayment?: number;
+  frequency?: LoanPaymentFrequency;
 }
 
 export interface RemainingScheduleWindow {
@@ -61,25 +62,27 @@ export function calculateMonthlyPayment(
   principal: number,
   annualRate: number,
   paymentCount: number,
+  frequency: LoanPaymentFrequency = "monthly",
 ): number | null {
-  return calculateLoanPayment({ principal, annualRate, paymentCount });
+  return calculateLoanPayment({ principal, annualRate, paymentCount, frequency });
 }
 
 export function calculateRemainingPaymentCount(
   balance: number,
   annualRate: number,
   monthlyPayment: number,
+  frequency: LoanPaymentFrequency = "monthly",
 ): number | null {
   if (balance === 0) return 0;
   if (balance < 0 || annualRate < 0 || monthlyPayment <= 0) return null;
   if (![balance, annualRate, monthlyPayment].every(Number.isFinite)) return null;
 
-  const monthlyRate = annualRate / 100 / 12;
-  if (monthlyRate === 0) return Math.ceil(balance / monthlyPayment);
-  if (monthlyPayment <= balance * monthlyRate) return null;
+  const periodicRate = annualRate / 100 / (frequency === "monthly" ? 12 : 26);
+  if (periodicRate === 0) return Math.ceil(balance / monthlyPayment);
+  if (monthlyPayment <= balance * periodicRate) return null;
 
   const exactCount =
-    -Math.log(1 - (balance * monthlyRate) / monthlyPayment) / Math.log(1 + monthlyRate);
+    -Math.log(1 - (balance * periodicRate) / monthlyPayment) / Math.log(1 + periodicRate);
   return Number.isFinite(exactCount) && exactCount > 0 ? Math.ceil(exactCount) : null;
 }
 
@@ -88,8 +91,9 @@ export function calculateBalanceAfterPayments(
   annualRate: number,
   totalPaymentCount: number,
   completedPaymentCount: number,
+  frequency: LoanPaymentFrequency = "monthly",
 ): number | null {
-  const payment = calculateMonthlyPayment(principal, annualRate, totalPaymentCount);
+  const payment = calculateMonthlyPayment(principal, annualRate, totalPaymentCount, frequency);
   if (payment === null) return null;
   if (!Number.isInteger(completedPaymentCount) || completedPaymentCount < 0) return null;
   if (completedPaymentCount === 0) return principal;
@@ -100,6 +104,7 @@ export function calculateBalanceAfterPayments(
     annualRate,
     paymentCount: totalPaymentCount,
     paymentAmount: payment,
+    frequency,
   });
   return projection[completedPaymentCount - 1]?.closingBalance ?? 0;
 }
@@ -111,6 +116,7 @@ export function resolveLoanBalanceAtDate(
   annualRate: number,
   totalPaymentCount: number,
   completedPaymentCount: number,
+  frequency: LoanPaymentFrequency = "monthly",
 ): number | null {
   if (enteredBalance !== undefined) {
     return Number.isFinite(enteredBalance) && enteredBalance >= 0 ? enteredBalance : null;
@@ -120,6 +126,7 @@ export function resolveLoanBalanceAtDate(
     annualRate,
     totalPaymentCount,
     completedPaymentCount,
+    frequency,
   );
 }
 
@@ -131,6 +138,7 @@ export function buildLoanSchedule({
   paymentCount,
   firstPaymentDate,
   monthlyPayment,
+  frequency = "monthly",
 }: BuildLoanScheduleParams): QuoteImport[] {
   if (startingBalance < 0 || annualRate < 0 || paymentCount <= 0) return [];
 
@@ -139,13 +147,15 @@ export function buildLoanSchedule({
     annualRate,
     paymentCount,
     paymentAmount: monthlyPayment,
+    frequency,
   });
   if (projection.length === 0) return [];
   const preserveEndOfMonth = isLastDayOfMonth(firstPaymentDate);
 
   return projection.map((row, index) => {
-    const nominalDate = addMonths(firstPaymentDate, index);
-    const paymentDate = preserveEndOfMonth ? endOfMonth(nominalDate) : nominalDate;
+    const nominalDate = calculateLoanPaymentDate(firstPaymentDate, index, frequency)!;
+    const paymentDate =
+      preserveEndOfMonth && frequency === "monthly" ? endOfMonth(nominalDate) : nominalDate;
     return {
       symbol: assetId,
       date: format(paymentDate, "yyyy-MM-dd"),
