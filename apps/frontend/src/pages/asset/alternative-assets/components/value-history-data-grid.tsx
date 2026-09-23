@@ -29,8 +29,8 @@ import { parseLocalDate } from "@/lib/utils";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { toast } from "@wealthfolio/ui/components/ui/use-toast";
 import { ValueHistoryToolbar } from "./value-history-toolbar";
-import { format, isLastDayOfMonth } from "date-fns";
-import { readLoanProjectionMetadata } from "../lib/loan-events";
+import { differenceInCalendarDays, format, isLastDayOfMonth } from "date-fns";
+import { getLoanFrequencyAtDate } from "../lib/loan-events";
 
 const MOBILE_PAGE_SIZE = 20;
 
@@ -206,9 +206,6 @@ export function ValueHistoryDataGrid({
     if (!isLiability || interestRate === undefined || interestRate <= 0) {
       return new Map<string, { capital: number; interest: number }>();
     }
-    const projectionMetadata = readLoanProjectionMetadata(loanMetadata ?? {});
-    const periodsPerYear = projectionMetadata?.frequency === "monthly" ? 12 : 26;
-    const periodicRate = interestRate / 100 / periodsPerYear;
     const sortedAsc = [...localEntries].sort((a, b) => a.date.getTime() - b.date.getTime());
     const result = new Map<string, { capital: number; interest: number }>();
     // The origination entry represents the first paid instalment. Use the
@@ -221,18 +218,25 @@ export function ValueHistoryDataGrid({
       const curr = sortedAsc[i];
       const isEarlyRepayment = curr.notes?.startsWith("early_repayment:");
       const isScheduledPayment = curr.notes?.startsWith("loan_schedule|");
+      const frequency = getLoanFrequencyAtDate(loanMetadata, format(curr.date, "yyyy-MM-dd"));
+      const daysFromOrigination = loanOriginationDate
+        ? differenceInCalendarDays(curr.date, loanOriginationDate)
+        : -1;
       const isContractualPaymentDate =
         loanOriginationDate !== undefined &&
-        (isLastDayOfMonth(loanOriginationDate)
+        (frequency !== "monthly"
+          ? daysFromOrigination >= 0 && daysFromOrigination % 14 === 0
+          : isLastDayOfMonth(loanOriginationDate)
           ? isLastDayOfMonth(curr.date)
           : curr.date.getDate() === loanOriginationDate.getDate());
       // A manually recorded balance between payment dates is a snapshot, not
       // an instalment. Keep it out of the capital/interest calculation.
       if (!isScheduledPayment && !isEarlyRepayment && !isContractualPaymentDate) continue;
       const scheduleRate = /(?:^|\|)rate=([\d.]+)/.exec(curr.notes ?? "")?.[1];
+      const rowPeriodsPerYear = frequency === "monthly" ? 12 : 26;
       const effectiveMonthlyRate = scheduleRate
-        ? Number.parseFloat(scheduleRate) / 100 / periodsPerYear
-        : periodicRate;
+        ? Number.parseFloat(scheduleRate) / 100 / rowPeriodsPerYear
+        : interestRate / 100 / rowPeriodsPerYear;
       const repaymentAmount = isEarlyRepayment
         ? Number.parseFloat(curr.notes?.split(":")[1] ?? "")
         : Number.NaN;

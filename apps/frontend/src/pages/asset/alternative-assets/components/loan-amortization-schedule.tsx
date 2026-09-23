@@ -4,7 +4,11 @@ import { useTranslation } from "react-i18next";
 import type { Quote } from "@/lib/types";
 import { AmountDisplay } from "@wealthfolio/ui";
 import { isConfirmedLoanBalance } from "../lib/loan-balance";
-import { readLoanEvents, type LoanExtraRepaymentEvent } from "../lib/loan-events";
+import {
+  getLoanFrequencyAtDate,
+  readLoanEvents,
+  type LoanExtraRepaymentEvent,
+} from "../lib/loan-events";
 import { getRemainingLoanProjection } from "../lib/loan-projection";
 
 interface LoanAmortizationScheduleProps {
@@ -21,7 +25,6 @@ export function LoanAmortizationSchedule({
   const { t } = useTranslation();
   const rows = useMemo(() => {
     const remaining = getRemainingLoanProjection(metadata, quoteHistory);
-    const periodsPerYear = remaining?.frequency === "monthly" ? 12 : 26;
     const events = readLoanEvents(metadata);
     const historicalDays = new Set<string>();
     const parsedOriginalAmount = Number(metadata.original_amount ?? metadata.purchase_price);
@@ -44,6 +47,8 @@ export function LoanAmortizationSchedule({
         const payment = parseNoteNumber(quote.notes, "payment") ?? extraRepayment?.amount ?? null;
         const rate = parseNoteNumber(quote.notes, "rate");
         const openingBalance = previousBalance;
+        const frequency = getLoanFrequencyAtDate(metadata, quoteDay);
+        const periodsPerYear = frequency === "monthly" ? 12 : 26;
         const interest =
           extraRepayment !== undefined
             ? 0

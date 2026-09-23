@@ -73,11 +73,7 @@ export function getRemainingLoanProjection(
   const contractualEndDate =
     parsedEndDate ??
     (storedProjection.paymentCount
-      ? calculateLoanEndDate(
-          parsedFirstPaymentDate,
-          storedProjection.paymentCount,
-          storedProjection.frequency,
-        )
+      ? calculateLoanEndDate(parsedFirstPaymentDate, storedProjection.paymentCount, frequency)
       : null);
   if (!contractualEndDate) return null;
 

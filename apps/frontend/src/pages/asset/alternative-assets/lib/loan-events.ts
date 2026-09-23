@@ -130,6 +130,25 @@ export function readLoanEvents(metadata: LoanMetadata | null | undefined): LoanE
     .sort((left, right) => left.effectiveDate.localeCompare(right.effectiveDate));
 }
 
+/** Resolve the payment frequency active on a given calendar date. */
+export function getLoanFrequencyAtDate(
+  metadata: LoanMetadata | null | undefined,
+  date: string,
+): LoanPaymentFrequency {
+  const projection = readLoanProjectionMetadata(metadata);
+  const raw = metadata?.payment_frequency;
+  let frequency: LoanPaymentFrequency =
+    raw === "monthly" || raw === "biweekly" || raw === "accelerated_biweekly"
+      ? raw
+      : projection?.frequency ?? "monthly";
+  for (const event of readLoanEvents(metadata)) {
+    if (event.effectiveDate > date) break;
+    if (event.type === "payment_frequency_change") frequency = event.frequency;
+    if (event.type === "renewal" && event.frequency) frequency = event.frequency;
+  }
+  return frequency;
+}
+
 /** Return metadata with a validated event appended without mutating the input. */
 export function appendLoanEvent(metadata: LoanMetadata, event: LoanEvent): LoanMetadata {
   if (!isLoanEvent(event)) {
