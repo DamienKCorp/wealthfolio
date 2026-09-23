@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Quote } from "@/lib/types";
 import { getConfirmedLoanBalances, getProjectedLoanBalances } from "./loan-balance";
 import { appendLoanEvent, type LoanMetadata } from "./loan-events";
 import { projectLoanFromEvents } from "./loan-calculator";
@@ -105,7 +106,7 @@ describe("loan lifecycle", () => {
   });
 
   it("identifies obsolete legacy future schedules during migration", () => {
-    const existing = buildLoanSchedule({
+    const existing: Quote[] = buildLoanSchedule({
       assetId: "loan",
       currency: "EUR",
       startingBalance: 10_000,
@@ -113,13 +114,23 @@ describe("loan lifecycle", () => {
       paymentCount: 12,
       firstPaymentDate: new Date("2026-01-01T00:00:00Z"),
     }).map((quote, index) => ({
-      ...quote,
       id: `quote-${index}`,
+      createdAt: "2026-01-01T00:00:00Z",
+      dataSource: "MANUAL",
       timestamp: `${quote.date}T00:00:00Z`,
+      assetId: "loan",
+      open: quote.close,
+      high: quote.close,
+      low: quote.close,
+      volume: 0,
+      close: quote.close,
+      adjclose: quote.close,
+      currency: quote.currency,
+      notes: quote.notes,
     }));
     const obsolete = getObsoleteFutureQuoteIds(existing, new Date("2026-03-15"), []);
     expect(obsolete).toEqual(
-      existing.filter((quote) => quote.date > "2026-03-15").map((q) => q.id),
+      existing.filter((quote) => quote.timestamp.slice(0, 10) > "2026-03-15").map((q) => q.id),
     );
   });
 
