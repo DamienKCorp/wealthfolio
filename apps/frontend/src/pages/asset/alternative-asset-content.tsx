@@ -283,11 +283,11 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       frequency: loanFrequency,
     });
 
-    if (quotes.length > 0) await replaceGeneratedLoanSchedule(quotes, today);
+    if (quotes.length > 0) replaceGeneratedLoanSchedule(quotes, today);
 
     // Always persist the new effective payment; also update rate if it changed
     const existingMetadata = Object.fromEntries(
-      Object.entries(holding.metadata || {}).map(([k, v]) => [k, String(v)]),
+      Object.entries(holding.metadata || {}).map(([k, v]) => [k, serializeLoanMetadataValue(v)]),
     );
     const metaUpdates: Record<string, string> = {
       ...existingMetadata,
