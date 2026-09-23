@@ -12,9 +12,9 @@ A liability has two different kinds of data:
    recorded or confirmed.
 2. **Projected data**: future amortisation calculated from the current terms.
 
-Projected instalments are not market quotes and must not be persisted as
-quotes. The application stores the terms and dated events, then calculates the
-future schedule when it is displayed.
+Projected instalments are not market quotes and must not be persisted as quotes.
+The application stores the terms and dated events, then calculates the future
+schedule when it is displayed.
 
 Historical quotes are never rewritten when a new event is entered. An event
 changes the projection from its effective date onward.
@@ -23,15 +23,15 @@ changes the projection from its effective date onward.
 
 The projection engine accepts:
 
-| Input | Meaning |
-| --- | --- |
-| `principal` | Balance from which the projection starts |
-| `annualRate` | Annual nominal interest rate, expressed as a percentage |
-| `paymentAmount` | Optional fixed payment; if omitted, it is calculated |
-| `paymentCount` | Maximum number of future payments |
-| `frequency` | `monthly`, `biweekly`, or `accelerated_biweekly` |
-| `firstPaymentDate` | Date of the first projected payment |
-| `events` | Validated dated events applied before the payment on their date |
+| Input              | Meaning                                                         |
+| ------------------ | --------------------------------------------------------------- |
+| `principal`        | Balance from which the projection starts                        |
+| `annualRate`       | Annual nominal interest rate, expressed as a percentage         |
+| `paymentAmount`    | Optional fixed payment; if omitted, it is calculated            |
+| `paymentCount`     | Maximum number of future payments                               |
+| `frequency`        | `monthly`, `biweekly`, or `accelerated_biweekly`                |
+| `firstPaymentDate` | Date of the first projected payment                             |
+| `events`           | Validated dated events applied before the payment on their date |
 
 For a periodic rate `r` and balance `B`, interest for a period is:
 
@@ -58,14 +58,14 @@ closing balances, not during the internal amortisation calculation.
 
 Events are dated and ordered by `effectiveDate`.
 
-| Event | Required fields | Effect |
-| --- | --- | --- |
-| `balance_correction` | `balance` | Replaces the balance from the effective payment onward |
-| `extra_repayment` | `amount` | Reduces principal without adding interest |
-| `rate_change` | `annualRate` | Changes the rate for subsequent payments |
-| `payment_change` | `paymentAmount` | Changes the fixed payment for subsequent payments |
-| `payment_frequency_change` | `frequency` | Changes the period spacing and periodic rate |
-| `renewal` | `annualRate`, optional payment/frequency/end date | Starts a new term while preserving the previous history |
+| Event                      | Required fields                                   | Effect                                                  |
+| -------------------------- | ------------------------------------------------- | ------------------------------------------------------- |
+| `balance_correction`       | `balance`                                         | Replaces the balance from the effective payment onward  |
+| `extra_repayment`          | `amount`                                          | Reduces principal without adding interest               |
+| `rate_change`              | `annualRate`                                      | Changes the rate for subsequent payments                |
+| `payment_change`           | `paymentAmount`                                   | Changes the fixed payment for subsequent payments       |
+| `payment_frequency_change` | `frequency`                                       | Changes the period spacing and periodic rate            |
+| `renewal`                  | `annualRate`, optional payment/frequency/end date | Starts a new term while preserving the previous history |
 
 Malformed events are ignored when read. Dates must be ISO calendar dates and
 amounts/rates must be finite and non-negative. Payments and extra repayments
@@ -82,8 +82,8 @@ A renewal is not a rewrite of the original loan. It is a dated event:
 - previous quotes remain unchanged.
 
 Balance corrections and extra repayments follow the same rule. The current
-balance is the last relevant observed balance; the event is then applied only
-to future projection periods. The UI must never delete or regenerate historical
+balance is the last relevant observed balance; the event is then applied only to
+future projection periods. The UI must never delete or regenerate historical
 quotes as a side effect of these actions.
 
 ## Confirmed versus projected values
@@ -126,9 +126,9 @@ The metadata format is deliberately versioned so it can evolve without
 reinterpreting historical quotes.
 
 Existing installations may contain future `loan_schedule` quotes. They remain
-read-compatible, but new code must not create additional future schedule
-quotes. A later migration may archive or remove obsolete generated rows after
-the projection engine has been validated against the user's confirmed data.
+read-compatible, but new code must not create additional future schedule quotes.
+A later migration may archive or remove obsolete generated rows after the
+projection engine has been validated against the user's confirmed data.
 
 ## Display and valuation rules
 
@@ -141,10 +141,10 @@ The same valuation snapshot must be used for:
 - net-worth calculations;
 - linked-asset equity calculations.
 
-The snapshot uses the latest relevant observed balance and never a future
-legacy projection. Future rows shown in an amortisation table are calculated
-on demand and are labelled as projected. Historical rows retain their original
-dates and values.
+The snapshot uses the latest relevant observed balance and never a future legacy
+projection. Future rows shown in an amortisation table are calculated on demand
+and are labelled as projected. Historical rows retain their original dates and
+values.
 
 ## Testing expectations
 
