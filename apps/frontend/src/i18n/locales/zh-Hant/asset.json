@@ -721,6 +721,8 @@
   "valueHistory": {
     "date": "日期",
     "balance": "餘額",
+    "payment": "還款額",
+    "status": "狀態",
     "capital": "本金",
     "interest": "利息",
     "value": "價值",
@@ -776,6 +778,18 @@
     "error_save_failed": "無法儲存 Logo。"
   },
   "loanActions": {
+    "amortization_schedule": "攤還計畫",
+    "amortization_description": "貸款剩餘期間內的已確認餘額與預計還款。",
+    "projected_interest": "預計利息",
+    "remaining_payments": "剩餘還款期數",
+    "status_confirmed": "已確認",
+    "status_projected": "預計",
+    "balance_correction": "餘額更正",
+    "balance_correction_description": "自指定日期起更正未償餘額，而不修改先前紀錄。",
+    "extra_repayment": "額外還款",
+    "extra_repayment_description": "記錄額外本金還款並更新未來預測。",
+    "confirm_balance_correction": "儲存更正",
+    "confirm_extra_repayment": "記錄還款",
     "early_repayment": "提前還款",
     "early_repayment_description": "記錄一次性還款並重新計算貸款。",
     "close_loan": "結清貸款",

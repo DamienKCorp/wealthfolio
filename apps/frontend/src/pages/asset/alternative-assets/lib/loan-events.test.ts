@@ -57,6 +57,21 @@ describe("loan events", () => {
     ]);
   });
 
+  it("reads events serialized by the metadata persistence API", () => {
+    const metadata: LoanMetadata = {
+      [LOAN_EVENTS_METADATA_KEY]: JSON.stringify([
+        { type: "rate_change", effectiveDate: "2027-01-01", annualRate: 4 },
+        { type: "extra_repayment", effectiveDate: "2026-06-01", amount: 500 },
+      ]),
+    };
+
+    expect(readLoanEvents(metadata)).toEqual([
+      { type: "extra_repayment", effectiveDate: "2026-06-01", amount: 500 },
+      { type: "rate_change", effectiveDate: "2027-01-01", annualRate: 4 },
+    ]);
+    expect(readLoanEvents({ [LOAN_EVENTS_METADATA_KEY]: "not-json" })).toEqual([]);
+  });
+
   it("appends an event immutably and preserves existing metadata", () => {
     const metadata: LoanMetadata = { interest_rate: "3.04" };
     const next = appendLoanEvent(metadata, {

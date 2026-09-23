@@ -21,7 +21,7 @@ import {
   useDateFormatting,
   useNumberFormatting,
 } from "@wealthfolio/ui";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { Quote } from "@/lib/types";
@@ -78,7 +78,8 @@ interface ValueHistoryDataGridProps {
   onDeleteQuote: (quoteId: string) => Promise<void>;
   /** Refresh quote-dependent queries after a complete persistence operation */
   onPersistComplete: () => Promise<void>;
-  onEarlyRepayment?: () => void;
+  /** Content displayed between the action toolbar and the value history. */
+  contentAfterToolbar?: ReactNode;
   onCloseLoan?: () => void;
   onRecalculateSchedule?: () => void;
   onBalanceCorrection?: () => void;
@@ -156,7 +157,7 @@ export function ValueHistoryDataGrid({
   onSaveQuote,
   onDeleteQuote,
   onPersistComplete,
-  onEarlyRepayment,
+  contentAfterToolbar,
   onCloseLoan,
   onRecalculateSchedule,
   onBalanceCorrection,
@@ -688,6 +689,8 @@ export function ValueHistoryDataGrid({
           </Button>
         </div>
 
+        {contentAfterToolbar}
+
         <div className="bg-background isolate divide-y overflow-hidden rounded-xl border">
           {mobileEntries.length === 0 ? (
             <p className="text-muted-foreground p-6 text-center text-sm">
@@ -900,12 +903,13 @@ export function ValueHistoryDataGrid({
         onCancel={handleCancel}
         isSaving={isPersisting}
         isLiability={isLiability}
-        onEarlyRepayment={onEarlyRepayment}
         onCloseLoan={onCloseLoan}
         onRecalculateSchedule={onRecalculateSchedule}
         onBalanceCorrection={onBalanceCorrection}
         onExtraRepayment={onExtraRepayment}
       />
+
+      {contentAfterToolbar}
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
         <DataGrid {...dataGrid} stretchColumns height="calc(100vh - 340px)" />

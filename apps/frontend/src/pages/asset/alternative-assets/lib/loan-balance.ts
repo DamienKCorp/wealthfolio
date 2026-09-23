@@ -60,9 +60,19 @@ export function getCurrentLoanBalances<T extends LoanBalanceEntry>(
   entries: T[],
   now = new Date(),
 ): T[] {
-  const today = now.getTime();
-  return entries.filter(
-    (entry) => !isProjectedLoanBalance(entry) || new Date(entry.timestamp).getTime() <= today,
+  const cutoff = now.getTime();
+  const eligible = entries.filter((entry) => new Date(entry.timestamp).getTime() <= cutoff);
+  const confirmedTimestamps = eligible
+    .filter(isConfirmedLoanBalance)
+    .map((entry) => new Date(entry.timestamp).getTime());
+
+  if (confirmedTimestamps.length === 0) return eligible;
+
+  const latestConfirmedTimestamp = Math.max(...confirmedTimestamps);
+  return eligible.filter(
+    (entry) =>
+      isConfirmedLoanBalance(entry) ||
+      new Date(entry.timestamp).getTime() < latestConfirmedTimestamp,
   );
 }
 

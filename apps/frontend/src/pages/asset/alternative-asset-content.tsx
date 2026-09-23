@@ -1,6 +1,8 @@
 import HistoryChart from "@/components/history-chart-symbol";
+import { getQuoteHistory } from "@/adapters";
 import { useAlternativeHoldings, useLinkedLiabilities } from "@/hooks/use-alternative-assets";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
+import { QueryKeys } from "@/lib/query-keys";
 import type { AlternativeAssetHolding, Asset, DateRange, Quote, TimePeriod } from "@/lib/types";
 import { AlternativeAssetKind } from "@/lib/types";
 import {
@@ -36,6 +38,7 @@ import {
 import { Area, AreaChart, ReferenceLine, ResponsiveContainer, XAxis } from "recharts";
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useQueries } from "@tanstack/react-query";
 import { formatDateISO } from "@/lib/utils";
 import {
   AlternativeAssetQuickAddModal,
@@ -45,7 +48,6 @@ import {
   ValueHistoryDataGrid,
 } from "./alternative-assets";
 import {
-  EarlyRepaymentDialog,
   CloseLoanDialog,
   RecalculateScheduleDialog,
   RenewLoanDialog,
@@ -69,6 +71,15 @@ import {
   type LoanEvent,
   type LoanMetadata,
 } from "./alternative-assets/lib/loan-events";
+import {
+  getLatestCurrentLoanBalance,
+  loanEventProvenance,
+} from "./alternative-assets/lib/loan-balance";
+import {
+  buildLoanChartData,
+  getRemainingLoanProjection,
+} from "./alternative-assets/lib/loan-projection";
+import type { DatedLoanProjectionRow } from "./alternative-assets/lib/loan-calculator";
 
 interface AlternativeAssetContentProps {
   assetId: string;
@@ -106,6 +117,23 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     assetId,
     enabled: isLinkableAsset,
   });
+  const linkedLiabilityQuoteResults = useQueries({
+    queries: linkedLiabilities.map((liability) => ({
+      queryKey: [QueryKeys.QUOTE_HISTORY, liability.id],
+      queryFn: () => getQuoteHistory(liability.id),
+      enabled: isLinkableAsset,
+    })),
+  });
+  const valuedLinkedLiabilities = linkedLiabilities.map((liability, index) => ({
+    ...liability,
+    marketValue: String(
+      getLoanValuationSnapshot(
+        liability.marketValue,
+        liability.metadata,
+        linkedLiabilityQuoteResults[index]?.data ?? [],
+      ).currentBalance,
+    ),
+  }));
 
   // Fetch all alternative holdings to find linked asset for liabilities
   const { data: allHoldings = [] } = useAlternativeHoldings({ enabled: !!holding.linkedAssetId });
@@ -122,7 +150,6 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
 
   const { updateMetadataMutation } = useAlternativeAssetMutations();
 
-  const [earlyRepaymentOpen, setEarlyRepaymentOpen] = useState(false);
   const [closeLoanOpen, setCloseLoanOpen] = useState(false);
   const [recalculateScheduleOpen, setRecalculateScheduleOpen] = useState(false);
   const [renewLoanOpen, setRenewLoanOpen] = useState(false);
@@ -171,6 +198,10 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     storedMonthlyPayment >= 0
       ? storedMonthlyPayment
       : calculateMonthlyPayment(loanOriginalAmount, interestRate, totalMonths);
+  const remainingLoanProjection = useMemo(
+    () => (isLiability ? getRemainingLoanProjection(metadata, quoteHistory) : null),
+    [isLiability, metadata, quoteHistory],
+  );
 
   // Future instalments are projections, not market observations. They are
   // recalculated from loan metadata and events and are deliberately not
@@ -180,96 +211,6 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     _schedule: ReturnType<typeof buildLoanSchedule>,
     _effectiveDate: Date,
   ) => undefined;
-
-  const handleEarlyRepayment = async (
-    date: Date,
-    amount: number,
-    mode: "reduce_duration" | "reduce_payment",
-  ) => {
-    const appliedAmount = Math.min(amount, currentBalance);
-    const newBalance = currentBalance - appliedAmount;
-    const quote: Quote = {
-      id: "",
-      createdAt: new Date().toISOString(),
-      dataSource: "MANUAL",
-      timestamp: `${formatDateISO(date)}T00:00:00Z`,
-      assetId,
-      open: newBalance,
-      high: newBalance,
-      low: newBalance,
-      close: newBalance,
-      adjclose: newBalance,
-      volume: 0,
-      currency: holding.currency,
-      notes: `early_repayment:${appliedAmount.toFixed(2)}`,
-    };
-    await saveQuoteMutation.mutateAsync(quote);
-
-    if (endDate && loanOriginationDate) {
-      const originationDate = parseISO(loanOriginationDate);
-      // Index of the first monthly quote strictly after the repayment date
-      const startIndex = differenceInCalendarMonths(date, originationDate) + 1;
-      let totalN = differenceInCalendarMonths(endDate, originationDate);
-      const existingMetadata = Object.fromEntries(
-        Object.entries(holding.metadata || {}).map(([k, v]) => [k, String(v)]),
-      );
-      const metaUpdates: Record<string, string> = { ...existingMetadata };
-
-      if (newBalance === 0) {
-        await updateMetadataMutation.mutateAsync({
-          assetId,
-          metadata: {
-            ...metaUpdates,
-            end_date: formatDateISO(date),
-            current_monthly_payment: "0",
-          },
-        });
-        await invalidateQuoteQueries();
-        setEarlyRepaymentOpen(false);
-        return;
-      }
-
-      if (mode === "reduce_duration" && monthlyPayment !== null && monthlyPayment > 0) {
-        const remainingPaymentCount = calculateRemainingPaymentCount(
-          newBalance,
-          interestRate,
-          monthlyPayment,
-        );
-        if (remainingPaymentCount !== null && remainingPaymentCount > 0) {
-          totalN = startIndex + remainingPaymentCount;
-          metaUpdates.end_date = formatDateISO(addMonths(originationDate, totalN - 1));
-        }
-      }
-
-      const remainingN = mode === "reduce_duration" ? totalN - startIndex : totalN - startIndex + 1;
-      if (remainingN > 0) {
-        const P =
-          mode === "reduce_duration"
-            ? monthlyPayment
-            : calculateMonthlyPayment(newBalance, interestRate, remainingN);
-        if (P === null) return;
-
-        // Persist the new effective monthly payment so the overview stat stays accurate
-        metaUpdates.current_monthly_payment = String(Math.round(P * 100) / 100);
-
-        const quotes = buildLoanSchedule({
-          assetId,
-          currency: holding.currency,
-          startingBalance: newBalance,
-          annualRate: interestRate,
-          paymentCount: remainingN,
-          firstPaymentDate: addMonths(originationDate, startIndex),
-          monthlyPayment: mode === "reduce_duration" ? P : undefined,
-        });
-        if (quotes.length > 0) await replaceGeneratedLoanSchedule(quotes, date);
-      }
-
-      await updateMetadataMutation.mutateAsync({ assetId, metadata: metaUpdates });
-    }
-
-    await invalidateQuoteQueries();
-    setEarlyRepaymentOpen(false);
-  };
 
   const handleCloseLoan = async (date: Date) => {
     const cappedDate = date;
@@ -389,19 +330,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     paymentAmount?: number,
     termEndDate?: Date,
   ) => {
-    const existingMetadata = Object.fromEntries(
-      Object.entries(holding.metadata || {}).map(([key, value]) => [key, String(value)]),
-    );
-    const metadata = Object.fromEntries(
-      Object.entries(existingMetadata).map(([key, value]) => {
-        if (key !== LOAN_EVENTS_METADATA_KEY) return [key, value];
-        try {
-          return [key, JSON.parse(value)];
-        } catch {
-          return [key, []];
-        }
-      }),
-    ) as LoanMetadata;
+    const metadata = { ...(holding.metadata || {}) } as LoanMetadata;
     const nextMetadata = appendLoanEvent(metadata, {
       type: "renewal",
       effectiveDate: formatDateISO(effectiveDate),
@@ -428,23 +357,19 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
     effectiveDate: Date,
     amount: number,
   ) => {
-    const existingMetadata = Object.fromEntries(
-      Object.entries(holding.metadata || {}).map(([key, value]) => [key, String(value)]),
+    const effectiveDay = formatDateISO(effectiveDate);
+    const balanceAtDate = Math.abs(
+      getLatestCurrentLoanBalance(quoteHistory, new Date(`${effectiveDay}T23:59:59.999Z`))?.close ??
+        currentBalance,
     );
-    const metadata = Object.fromEntries(
-      Object.entries(existingMetadata).map(([key, value]) => {
-        if (key !== LOAN_EVENTS_METADATA_KEY) return [key, value];
-        try {
-          return [key, JSON.parse(value)];
-        } catch {
-          return [key, []];
-        }
-      }),
-    ) as LoanMetadata;
+    const appliedAmount = mode === "extra_repayment" ? Math.min(amount, balanceAtDate) : amount;
+    const newBalance =
+      mode === "balance_correction" ? appliedAmount : Math.max(0, balanceAtDate - appliedAmount);
+    const metadata = { ...(holding.metadata || {}) } as LoanMetadata;
     const event: LoanEvent =
       mode === "balance_correction"
-        ? { type: mode, effectiveDate: formatDateISO(effectiveDate), balance: amount }
-        : { type: mode, effectiveDate: formatDateISO(effectiveDate), amount };
+        ? { type: mode, effectiveDate: effectiveDay, balance: newBalance }
+        : { type: mode, effectiveDate: effectiveDay, amount: appliedAmount };
     const nextMetadata = appendLoanEvent(metadata, event);
     const updates: Record<string, string> = Object.fromEntries(
       Object.entries(nextMetadata).map(([key, value]) => [
@@ -452,6 +377,22 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         key === LOAN_EVENTS_METADATA_KEY ? JSON.stringify(value) : String(value),
       ]),
     );
+
+    await saveQuoteMutation.mutateAsync({
+      id: "",
+      createdAt: new Date().toISOString(),
+      dataSource: "MANUAL",
+      timestamp: `${effectiveDay}T00:00:00Z`,
+      assetId,
+      open: newBalance,
+      high: newBalance,
+      low: newBalance,
+      close: newBalance,
+      adjclose: newBalance,
+      volume: 0,
+      currency: holding.currency,
+      notes: loanEventProvenance(mode),
+    });
     await updateMetadataMutation.mutateAsync({ assetId, metadata: updates });
     await invalidateQuoteQueries();
     setBalanceCorrectionOpen(false);
@@ -554,14 +495,14 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
 
   // Calculate net equity for linkable assets
   const netEquity = useMemo(() => {
-    if (linkedLiabilities.length === 0) {
+    if (valuedLinkedLiabilities.length === 0) {
       return null;
     }
-    const liabilityTotal = linkedLiabilities.reduce((sum, liability) => {
+    const liabilityTotal = valuedLinkedLiabilities.reduce((sum, liability) => {
       return sum + Math.abs(parseFloat(liability.marketValue));
     }, 0);
     return marketValue - liabilityTotal;
-  }, [marketValue, linkedLiabilities]);
+  }, [marketValue, valuedLinkedLiabilities]);
 
   // Total interest paid: base formula corrected for early lump-sum repayments.
   // Early repayments are pure capital (zero interest) but inflate amountPaid;
@@ -687,9 +628,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
                   {isLiability ? (
                     <LiabilityHistoryChart
                       data={filteredChartData}
-                      endDate={endDate}
-                      annualRate={interestRate}
-                      monthlyPayment={monthlyPayment}
+                      projectedRows={remainingLoanProjection?.projection.rows}
                     />
                   ) : (
                     <HistoryChart data={filteredChartData} />
@@ -717,8 +656,8 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
             holding={holding}
             linkedAsset={linkedAsset}
             netEquity={isLinkableAsset ? (netEquity ?? marketValue) : null}
-            hasLinkedLiabilities={linkedLiabilities.length > 0}
-            linkedLiabilities={isLinkableAsset ? linkedLiabilities : []}
+            hasLinkedLiabilities={valuedLinkedLiabilities.length > 0}
+            linkedLiabilities={isLinkableAsset ? valuedLinkedLiabilities : []}
             isLiability={isLiability}
             totalInterestPaid={isLiability ? totalInterestPaid : null}
             monthlyPayment={isLiability ? monthlyPayment : null}
@@ -783,13 +722,6 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   // History tab
   return (
     <>
-      {isLiability && (
-        <LoanAmortizationSchedule
-          quoteHistory={quoteHistory}
-          metadata={holding.metadata || {}}
-          currency={holding.currency}
-        />
-      )}
       <ValueHistoryDataGrid
         key={assetId}
         data={quoteHistory}
@@ -804,7 +736,15 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         onSaveQuote={(quote: Quote) => saveQuoteMutation.mutateAsync(quote)}
         onDeleteQuote={(id: string) => deleteQuoteMutation.mutateAsync(id)}
         onPersistComplete={invalidateQuoteQueries}
-        onEarlyRepayment={isLiability ? () => setEarlyRepaymentOpen(true) : undefined}
+        contentAfterToolbar={
+          isLiability ? (
+            <LoanAmortizationSchedule
+              quoteHistory={quoteHistory}
+              metadata={holding.metadata || {}}
+              currency={holding.currency}
+            />
+          ) : undefined
+        }
         onCloseLoan={isLiability ? () => setCloseLoanOpen(true) : undefined}
         onRecalculateSchedule={isLiability ? () => setRenewLoanOpen(true) : undefined}
         onBalanceCorrection={isLiability ? () => setBalanceCorrectionOpen(true) : undefined}
@@ -812,18 +752,6 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       />
       {isLiability && (
         <>
-          <EarlyRepaymentDialog
-            open={earlyRepaymentOpen}
-            onOpenChange={setEarlyRepaymentOpen}
-            currentBalance={currentBalance}
-            currency={holding.currency}
-            interestRate={interestRate}
-            remainingMonths={remainingMonths}
-            monthlyPayment={monthlyPayment}
-            originationDate={loanOriginationDate ? parseISO(loanOriginationDate) : null}
-            endDate={endDate}
-            onSubmit={handleEarlyRepayment}
-          />
           <CloseLoanDialog
             open={closeLoanOpen}
             onOpenChange={setCloseLoanOpen}
@@ -1611,93 +1539,18 @@ export function useAlternativeAssetActions({
   };
 }
 
-function buildLiabilityChartData(
-  historicalData: { timestamp: string; totalValue: number; currency: string }[],
-  endDate: Date | string | null,
-  annualRate?: number,
-  monthlyPaymentArg?: number | null,
-): {
-  data: { timestamp: string; totalValue: number }[];
-  splitPercent: number;
-  todayTimestamp: string | null;
-} {
-  if (historicalData.length === 0) return { data: [], splitPercent: 100, todayTimestamp: null };
-
-  const now = new Date();
-  const sorted = [...historicalData]
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
-    .map((d) => ({ timestamp: d.timestamp, totalValue: d.totalValue }));
-
-  // Split at today: quotes on or before today are "past" (gray), after are "future" (green)
-  const pastPoints = sorted.filter((p) => new Date(p.timestamp) <= now);
-  const futurePoints = sorted.filter((p) => new Date(p.timestamp) > now);
-
-  if (pastPoints.length === 0) return { data: sorted, splitPercent: 0, todayTimestamp: null };
-
-  const todayTimestamp = pastPoints[pastPoints.length - 1].timestamp;
-
-  // If the amortization schedule already provides future data, use it directly
-  if (futurePoints.length > 0) {
-    const allPoints = [...pastPoints, ...futurePoints];
-    const splitPercent = ((pastPoints.length - 1) / (allPoints.length - 1)) * 100;
-    return { data: allPoints, splitPercent, todayTimestamp };
-  }
-
-  // No future data — fall back to linear projection toward end date
-  if (!endDate) return { data: pastPoints, splitPercent: 100, todayTimestamp };
-
-  const endDateObj = typeof endDate === "string" ? parseISO(endDate) : endDate;
-  const currentBalance = pastPoints[pastPoints.length - 1].totalValue;
-  const monthsLeft = Math.max(0, differenceInMonths(endDateObj, now));
-
-  if (monthsLeft === 0) return { data: pastPoints, splitPercent: 100, todayTimestamp };
-
-  const projected: { timestamp: string; totalValue: number }[] = [];
-  if (annualRate !== undefined && monthlyPaymentArg && monthlyPaymentArg > 0) {
-    const monthlyRate = annualRate / 100 / 12;
-    let balance = currentBalance;
-    for (let i = 1; i <= monthsLeft; i++) {
-      const interest = balance * monthlyRate;
-      balance = Math.max(0, balance - (monthlyPaymentArg - interest));
-      projected.push({
-        timestamp: addMonths(now, i).toISOString(),
-        totalValue: Math.round(balance * 100) / 100,
-      });
-      if (balance === 0) break;
-    }
-  } else {
-    for (let i = 1; i <= monthsLeft; i++) {
-      projected.push({
-        timestamp: addMonths(now, i).toISOString(),
-        totalValue: Math.max(0, currentBalance * (1 - i / monthsLeft)),
-      });
-    }
-  }
-
-  const allPoints = [...pastPoints, ...projected];
-  const splitPercent = ((pastPoints.length - 1) / (allPoints.length - 1)) * 100;
-  return { data: allPoints, splitPercent, todayTimestamp };
-}
-
 function LiabilityHistoryChart({
   data,
-  endDate,
-  annualRate,
-  monthlyPayment,
+  projectedRows = [],
 }: {
   data: { timestamp: string; totalValue: number; currency: string }[];
-  endDate: Date | string | null;
-  annualRate?: number;
-  monthlyPayment?: number | null;
+  projectedRows?: DatedLoanProjectionRow[];
 }) {
   const {
     data: chartData,
     splitPercent,
     todayTimestamp,
-  } = useMemo(
-    () => buildLiabilityChartData(data, endDate, annualRate, monthlyPayment),
-    [data, endDate, annualRate, monthlyPayment],
-  );
+  } = useMemo(() => buildLoanChartData(data, projectedRows), [data, projectedRows]);
 
   const split = `${splitPercent.toFixed(2)}%`;
 

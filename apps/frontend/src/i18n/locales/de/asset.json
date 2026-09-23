@@ -721,6 +721,8 @@
   "valueHistory": {
     "date": "Datum",
     "balance": "Saldo",
+    "payment": "Zahlung",
+    "status": "Status",
     "capital": "Tilgung",
     "interest": "Zinsen",
     "value": "Wert",
@@ -776,6 +778,18 @@
     "error_save_failed": "Das Logo konnte nicht gespeichert werden."
   },
   "loanActions": {
+    "amortization_schedule": "Tilgungsplan",
+    "amortization_description": "Bestätigte Salden und prognostizierte Zahlungen für die verbleibende Laufzeit.",
+    "projected_interest": "Prognostizierte Zinsen",
+    "remaining_payments": "Verbleibende Zahlungen",
+    "status_confirmed": "Bestätigt",
+    "status_projected": "Prognostiziert",
+    "balance_correction": "Saldokorrektur",
+    "balance_correction_description": "Ersetzt den offenen Saldo ab einem bestimmten Datum, ohne frühere Daten zu ändern.",
+    "extra_repayment": "Sondertilgung",
+    "extra_repayment_description": "Erfasst eine zusätzliche Tilgung und aktualisiert die zukünftige Prognose.",
+    "confirm_balance_correction": "Korrektur speichern",
+    "confirm_extra_repayment": "Tilgung erfassen",
     "early_repayment": "Sondertilgung",
     "early_repayment_description": "Einmalige Sondertilgung erfassen und Darlehen neu berechnen.",
     "close_loan": "Darlehen abschließen",

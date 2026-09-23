@@ -7,6 +7,7 @@ import {
   calculateRemainingPaymentCount,
   getObsoleteFutureQuoteIds,
   getRemainingScheduleWindow,
+  resolveLoanBalanceAtDate,
   splitLoanScheduleForPersistence,
 } from "./loan-schedule";
 
@@ -158,6 +159,25 @@ describe("loan schedule replacement", () => {
     expect(calculateBalanceAfterPayments(20_000, 3, totalPaymentCount, completedPaymentCount)).toBe(
       17_503.24,
     );
+  });
+
+  it("preserves an explicit current balance instead of replacing it with a theoretical one", () => {
+    expect(resolveLoanBalanceAtDate(17_250, 20_000, 3, 60, 8)).toBe(17_250);
+    expect(resolveLoanBalanceAtDate(undefined, 20_000, 3, 60, 8)).toBe(17_503.24);
+  });
+
+  it("calculates the remaining window for biweekly payments", () => {
+    const window = getRemainingScheduleWindow(
+      new Date(2026, 0, 2),
+      new Date(2026, 0, 16),
+      new Date(2026, 1, 27),
+      "biweekly",
+    );
+
+    expect(window).toEqual({
+      firstPaymentDate: new Date(2026, 0, 30),
+      paymentCount: 3,
+    });
   });
 
   it("generates every historical payment before a later balance date", () => {

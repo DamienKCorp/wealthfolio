@@ -65,12 +65,12 @@ describe("liability lifecycle integration", () => {
       {},
       {
         type: "balance_correction",
-        effectiveDate: "2027-01-01",
+        effectiveDate: "2099-01-01",
         balance: 70_000,
       },
     );
     const valuation = getLoanValuationSnapshot("80_000", { original_amount: "100000" }, [
-      { timestamp: "2026-12-01T00:00:00Z", close: 80_000, notes: undefined } as never,
+      { timestamp: "2020-12-01T00:00:00Z", close: 80_000, notes: undefined } as never,
     ]);
     expect(valuation.currentBalance).toBe(80_000);
     expect(readLoanEvents(metadata)[0]).toMatchObject({ balance: 70_000 });

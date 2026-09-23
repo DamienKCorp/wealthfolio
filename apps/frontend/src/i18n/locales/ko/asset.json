@@ -721,6 +721,8 @@
   "valueHistory": {
     "date": "날짜",
     "balance": "잔액",
+    "payment": "납입액",
+    "status": "상태",
     "capital": "원금",
     "interest": "이자",
     "value": "가치",
@@ -776,6 +778,18 @@
     "error_save_failed": "로고를 저장할 수 없습니다."
   },
   "loanActions": {
+    "amortization_schedule": "상환 일정",
+    "amortization_description": "남은 대출 기간의 확정 잔액과 예상 납입액입니다.",
+    "projected_interest": "예상 이자",
+    "remaining_payments": "남은 납입 횟수",
+    "status_confirmed": "확정",
+    "status_projected": "예상",
+    "balance_correction": "잔액 수정",
+    "balance_correction_description": "이전 기록을 변경하지 않고 지정한 날짜부터 미상환 잔액을 수정합니다.",
+    "extra_repayment": "추가 상환",
+    "extra_repayment_description": "추가 원금 상환을 기록하고 향후 예상값을 업데이트합니다.",
+    "confirm_balance_correction": "수정 저장",
+    "confirm_extra_repayment": "상환 기록",
     "early_repayment": "조기 상환",
     "early_repayment_description": "일시 상환을 기록하고 대출을 재계산합니다.",
     "close_loan": "대출 종결",

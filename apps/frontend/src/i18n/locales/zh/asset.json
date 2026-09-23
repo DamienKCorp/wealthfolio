@@ -721,6 +721,8 @@
   "valueHistory": {
     "date": "日期",
     "balance": "余额",
+    "payment": "还款额",
+    "status": "状态",
     "capital": "本金",
     "interest": "利息",
     "value": "价值",
@@ -776,6 +778,18 @@
     "error_save_failed": "无法保存 Logo。"
   },
   "loanActions": {
+    "amortization_schedule": "摊还计划",
+    "amortization_description": "贷款剩余期限内的已确认余额和预计还款。",
+    "projected_interest": "预计利息",
+    "remaining_payments": "剩余还款期数",
+    "status_confirmed": "已确认",
+    "status_projected": "预计",
+    "balance_correction": "余额更正",
+    "balance_correction_description": "从指定日期起更正未偿余额，而不修改此前记录。",
+    "extra_repayment": "额外还款",
+    "extra_repayment_description": "记录额外本金还款并更新未来预测。",
+    "confirm_balance_correction": "保存更正",
+    "confirm_extra_repayment": "记录还款",
     "early_repayment": "提前还款",
     "early_repayment_description": "记录一次性还款并重新计算贷款。",
     "close_loan": "结清贷款",

@@ -1,15 +1,14 @@
-import {
-  addMonths,
-  differenceInCalendarMonths,
-  endOfMonth,
-  format,
-  isAfter,
-  isLastDayOfMonth,
-} from "date-fns";
+import { addMonths, endOfMonth, format, isAfter, isLastDayOfMonth } from "date-fns";
 import type { Quote } from "@/lib/types";
 import type { QuoteImport } from "@/lib/types/quote-import";
 import { isProjectedLoanBalance } from "./loan-balance";
-import { calculateLoanPayment, projectLoan } from "./loan-calculator";
+import {
+  calculateLoanPayment,
+  calculateLoanPaymentDate,
+  calculatePaymentCountThroughDate,
+  projectLoan,
+} from "./loan-calculator";
+import type { LoanPaymentFrequency } from "./loan-events";
 
 interface BuildLoanScheduleParams {
   assetId: string;
@@ -31,21 +30,30 @@ export function getRemainingScheduleWindow(
   originationDate: Date,
   effectiveBalanceDate: Date,
   endDate: Date,
+  frequency: LoanPaymentFrequency = "monthly",
 ): RemainingScheduleWindow | null {
   if (isAfter(originationDate, effectiveBalanceDate) || isAfter(effectiveBalanceDate, endDate)) {
     return null;
   }
 
-  const completedMonths = differenceInCalendarMonths(effectiveBalanceDate, originationDate);
-  let firstPaymentDate = addMonths(originationDate, completedMonths + 1);
-  if (!isAfter(firstPaymentDate, effectiveBalanceDate)) {
-    firstPaymentDate = addMonths(originationDate, completedMonths + 2);
-  }
-  if (isAfter(firstPaymentDate, endDate)) return null;
+  const totalPaymentCount = calculatePaymentCountThroughDate(originationDate, endDate, frequency);
+  const completedPaymentCount = calculatePaymentCountThroughDate(
+    originationDate,
+    effectiveBalanceDate,
+    frequency,
+  );
+  if (totalPaymentCount <= completedPaymentCount) return null;
+
+  const firstPaymentDate = calculateLoanPaymentDate(
+    originationDate,
+    completedPaymentCount,
+    frequency,
+  );
+  if (!firstPaymentDate) return null;
 
   return {
     firstPaymentDate,
-    paymentCount: differenceInCalendarMonths(endDate, firstPaymentDate) + 1,
+    paymentCount: totalPaymentCount - completedPaymentCount,
   };
 }
 
@@ -94,6 +102,25 @@ export function calculateBalanceAfterPayments(
     paymentAmount: payment,
   });
   return projection[completedPaymentCount - 1]?.closingBalance ?? 0;
+}
+
+/** Keep an explicitly entered balance; otherwise derive it from the contractual schedule. */
+export function resolveLoanBalanceAtDate(
+  enteredBalance: number | undefined,
+  principal: number,
+  annualRate: number,
+  totalPaymentCount: number,
+  completedPaymentCount: number,
+): number | null {
+  if (enteredBalance !== undefined) {
+    return Number.isFinite(enteredBalance) && enteredBalance >= 0 ? enteredBalance : null;
+  }
+  return calculateBalanceAfterPayments(
+    principal,
+    annualRate,
+    totalPaymentCount,
+    completedPaymentCount,
+  );
 }
 
 export function buildLoanSchedule({

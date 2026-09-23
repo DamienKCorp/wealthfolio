@@ -725,6 +725,8 @@
   "valueHistory": {
     "date": "Data",
     "balance": "Saldo",
+    "payment": "Pagamento",
+    "status": "Estado",
     "capital": "Capital",
     "interest": "Juros",
     "value": "Valor",
@@ -783,6 +785,18 @@
     "error_save_failed": "Não foi possível salvar o logotipo."
   },
   "loanActions": {
+    "amortization_schedule": "Tabela de amortização",
+    "amortization_description": "Saldos confirmados e pagamentos projetados durante o prazo restante do empréstimo.",
+    "projected_interest": "Juros projetados",
+    "remaining_payments": "Pagamentos restantes",
+    "status_confirmed": "Confirmado",
+    "status_projected": "Projetado",
+    "balance_correction": "Correção de saldo",
+    "balance_correction_description": "Substitui o saldo em dívida a partir de uma data específica sem alterar o histórico anterior.",
+    "extra_repayment": "Amortização adicional",
+    "extra_repayment_description": "Regista uma amortização adicional de capital e atualiza as projeções futuras.",
+    "confirm_balance_correction": "Guardar correção",
+    "confirm_extra_repayment": "Registar amortização",
     "early_repayment": "Amortização antecipada",
     "early_repayment_description": "Registre um pagamento antecipado e recalcule o seu empréstimo.",
     "close_loan": "Encerrar empréstimo",

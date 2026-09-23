@@ -721,6 +721,8 @@
   "valueHistory": {
     "date": "Date",
     "balance": "Balance",
+    "payment": "Payment",
+    "status": "Status",
     "capital": "Principal",
     "interest": "Interest",
     "value": "Value",
@@ -732,6 +734,18 @@
     "duplicate_date_error": "Each history entry must use a unique date."
   },
   "loanActions": {
+    "amortization_schedule": "Amortization Schedule",
+    "amortization_description": "Confirmed balances and projected payments over the remaining loan term.",
+    "projected_interest": "Projected interest",
+    "remaining_payments": "Remaining payments",
+    "status_confirmed": "Confirmed",
+    "status_projected": "Projected",
+    "balance_correction": "Balance Correction",
+    "balance_correction_description": "Replace the outstanding balance from a specific date without changing earlier history.",
+    "extra_repayment": "Extra Repayment",
+    "extra_repayment_description": "Record an additional principal repayment and update future projections.",
+    "confirm_balance_correction": "Save Correction",
+    "confirm_extra_repayment": "Record Repayment",
     "early_repayment": "Early Repayment",
     "early_repayment_description": "Record a lump-sum repayment and recalculate your loan.",
     "close_loan": "Close Loan",

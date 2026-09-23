@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import {
   calculateLoanEndDate,
   calculateLoanPayment,
+  calculatePaymentCountThroughDate,
   calculatePaymentCount,
   calculateRemainingPayments,
   projectLoan,
@@ -35,7 +36,36 @@ describe("loan calculator", () => {
     });
 
     expect(projection.map((row) => row.closingBalance)).toEqual([600, 200, 0]);
-    expect(projection.every((row) => row.payment === 400)).toBe(true);
+    expect(projection.map((row) => row.payment)).toEqual([400, 400, 200]);
+    expect(projection.every((row) => row.payment === row.principal + row.interest)).toBe(true);
+  });
+
+  it("does not erase an outstanding balance when the configured term is too short", () => {
+    const projection = projectLoan({
+      principal: 1_000,
+      annualRate: 12,
+      paymentCount: 2,
+      paymentAmount: 100,
+    });
+
+    expect(projection).toHaveLength(2);
+    expect(projection.at(-1)?.closingBalance).toBeGreaterThan(800);
+    expect(projection.reduce((sum, row) => sum + row.principal, 0)).toBeLessThan(200);
+  });
+
+  it("caps the final event-driven instalment at the amount required to settle the loan", () => {
+    const projection = projectLoanFromEvents({
+      principal: 1_000,
+      annualRate: 0,
+      paymentCount: 10,
+      paymentAmount: 400,
+      firstPaymentDate: new Date(2026, 0, 1),
+      events: [],
+    });
+
+    expect(projection.rows).toHaveLength(3);
+    expect(projection.rows.map((row) => row.payment)).toEqual([400, 400, 200]);
+    expect(projection.finalPayment?.closingBalance).toBe(0);
   });
 
   it("rejects invalid inputs", () => {
@@ -49,6 +79,10 @@ describe("loan calculator", () => {
     expect(format(calculateLoanEndDate(new Date(2026, 0, 31), 3)!, "yyyy-MM-dd")).toBe(
       "2026-03-31",
     );
+    expect(format(calculateLoanEndDate(new Date(2025, 6, 7), 300)!, "yyyy-MM-dd")).toBe(
+      "2050-06-07",
+    );
+    expect(calculatePaymentCountThroughDate(new Date(2025, 6, 7), new Date(2050, 5, 7))).toBe(300);
   });
 
   it("returns dated rows, the end date, and the final payment", () => {
@@ -99,7 +133,8 @@ describe("loan calculator", () => {
       2,
     );
     expect(format(regular.endDate!, "yyyy-MM-dd")).toBe("2050-11-18");
-    expect(format(accelerated.endDate!, "yyyy-MM-dd")).toBe("2050-11-18");
+    expect(accelerated.endDate!.getTime()).toBeLessThan(regular.endDate!.getTime());
+    expect(accelerated.finalPayment!.payment).toBeLessThan(accelerated.rows[0].payment);
   });
 
   it("applies dated balance and rate events only to the forward projection", () => {
@@ -133,5 +168,54 @@ describe("loan calculator", () => {
 
     expect(projection.rows.map((row) => row.closingBalance)).toEqual([750, 400, 150, 0]);
     expect(projection.rows[1]?.openingBalance).toBe(650);
+  });
+
+  it("uses a renewal term end date to shorten or extend only the forward projection", () => {
+    const shortened = projectLoanFromEvents({
+      principal: 1_000,
+      annualRate: 0,
+      paymentCount: 12,
+      paymentAmount: 100,
+      firstPaymentDate: new Date(2026, 0, 1),
+      events: [
+        {
+          type: "renewal",
+          effectiveDate: "2026-02-01",
+          annualRate: 0,
+          termEndDate: "2026-04-01",
+        },
+      ],
+    });
+    const extended = projectLoanFromEvents({
+      principal: 1_000,
+      annualRate: 0,
+      paymentCount: 3,
+      paymentAmount: 100,
+      firstPaymentDate: new Date(2026, 0, 1),
+      events: [
+        {
+          type: "renewal",
+          effectiveDate: "2026-02-01",
+          annualRate: 0,
+          termEndDate: "2026-06-01",
+        },
+      ],
+    });
+
+    expect(shortened.rows.map((row) => format(row.paymentDate, "yyyy-MM-dd"))).toEqual([
+      "2026-01-01",
+      "2026-02-01",
+      "2026-03-01",
+      "2026-04-01",
+    ]);
+    expect(shortened.finalPayment?.closingBalance).toBe(600);
+    expect(extended.rows.map((row) => format(row.paymentDate, "yyyy-MM-dd"))).toEqual([
+      "2026-01-01",
+      "2026-02-01",
+      "2026-03-01",
+      "2026-04-01",
+      "2026-05-01",
+      "2026-06-01",
+    ]);
   });
 });

@@ -725,6 +725,8 @@
   "valueHistory": {
     "date": "Data",
     "balance": "Saldo",
+    "payment": "Pagamento",
+    "status": "Stato",
     "capital": "Capitale",
     "interest": "Interessi",
     "value": "Valore",
@@ -783,6 +785,18 @@
     "error_save_failed": "Impossibile salvare il logo."
   },
   "loanActions": {
+    "amortization_schedule": "Piano di ammortamento",
+    "amortization_description": "Saldi confermati e pagamenti previsti per la durata residua del prestito.",
+    "projected_interest": "Interessi previsti",
+    "remaining_payments": "Pagamenti rimanenti",
+    "status_confirmed": "Confermato",
+    "status_projected": "Previsto",
+    "balance_correction": "Correzione del saldo",
+    "balance_correction_description": "Sostituisce il saldo residuo da una data specifica senza modificare lo storico precedente.",
+    "extra_repayment": "Rimborso aggiuntivo",
+    "extra_repayment_description": "Registra un rimborso aggiuntivo del capitale e aggiorna le proiezioni future.",
+    "confirm_balance_correction": "Salva correzione",
+    "confirm_extra_repayment": "Registra rimborso",
     "early_repayment": "Rimborso anticipato",
     "early_repayment_description": "Registra un rimborso forfettario e ricalcola il tuo prestito.",
     "close_loan": "Chiudi prestito",

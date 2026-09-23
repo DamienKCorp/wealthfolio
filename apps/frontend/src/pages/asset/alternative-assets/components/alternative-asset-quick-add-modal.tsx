@@ -1,5 +1,4 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { addMonths, differenceInCalendarMonths } from "date-fns";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -33,12 +32,13 @@ import { useAlternativeAssetMutations } from "../hooks/use-alternative-asset-mut
 import { importManualQuotes } from "@/adapters";
 import {
   buildLoanSchedule,
-  calculateBalanceAfterPayments,
   calculateMonthlyPayment,
   getRemainingScheduleWindow,
+  resolveLoanBalanceAtDate,
   type RemainingScheduleWindow,
 } from "../lib/loan-schedule";
 import { LOAN_PROJECTION_METADATA_KEY, serializeLoanProjectionMetadata } from "../lib/loan-events";
+import { calculateLoanEndDate } from "../lib/loan-calculator";
 import {
   AlternativeAssetKind,
   type CreateAlternativeAssetRequest,
@@ -325,7 +325,11 @@ export function AlternativeAssetQuickAddModal({
       if (formData.interestRate) metadata.interest_rate = formData.interestRate;
       if (formData.automaticSchedule && formData.loanTerm && formData.purchaseDate) {
         const termMonths = Math.round(parseFloat(formData.loanTerm) * 12);
-        const computedEndDate = addMonths(formData.purchaseDate, termMonths);
+        const computedEndDate = calculateLoanEndDate(formData.purchaseDate, termMonths);
+        if (!computedEndDate) {
+          setValidationError("asset:quickAdd.validation.invalid");
+          return;
+        }
         metadata.end_date = formatDateToISO(computedEndDate);
         remainingSchedule = getRemainingScheduleWindow(
           formData.purchaseDate,
@@ -333,20 +337,21 @@ export function AlternativeAssetQuickAddModal({
           computedEndDate,
         );
         totalPaymentCount = termMonths;
-        // The balance date is itself a paid instalment. Include it in the
-        // amortization count instead of treating it as a snapshot after the
-        // latest payment (which would shift the balance by one month).
         completedPaymentCount = Math.min(
           totalPaymentCount,
-          Math.max(1, differenceInCalendarMonths(formData.valueDate, formData.purchaseDate) + 1),
+          totalPaymentCount - (remainingSchedule?.paymentCount ?? 0),
         );
-        const scheduledBalance = calculateBalanceAfterPayments(
+        const enteredBalance = formData.currentValue.trim()
+          ? parseFloat(formData.currentValue)
+          : undefined;
+        const balanceAtDate = resolveLoanBalanceAtDate(
+          enteredBalance,
           parseFloat(formData.purchasePrice ?? "0"),
           formData.interestRate ? parseFloat(formData.interestRate) : 0,
           totalPaymentCount,
           completedPaymentCount,
         );
-        if (scheduledBalance !== null) currentValue = String(scheduledBalance);
+        if (balanceAtDate !== null) currentValue = String(balanceAtDate);
         balanceQuoteDate = formData.valueDate;
         const effectivePayment = remainingSchedule
           ? calculateMonthlyPayment(

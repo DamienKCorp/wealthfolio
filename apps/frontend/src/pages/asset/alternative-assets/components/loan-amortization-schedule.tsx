@@ -1,11 +1,11 @@
-import { addMonths, format } from "date-fns";
+import { format } from "date-fns";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { Quote } from "@/lib/types";
 import { AmountDisplay } from "@wealthfolio/ui";
-import { readLoanEvents, readLoanProjectionMetadata } from "../lib/loan-events";
-import { getLatestCurrentLoanBalance } from "../lib/loan-balance";
-import { projectLoanFromEvents } from "../lib/loan-calculator";
+import { isConfirmedLoanBalance } from "../lib/loan-balance";
+import { readLoanEvents, type LoanExtraRepaymentEvent } from "../lib/loan-events";
+import { getRemainingLoanProjection } from "../lib/loan-projection";
 
 interface LoanAmortizationScheduleProps {
   quoteHistory: Quote[];
@@ -20,58 +20,63 @@ export function LoanAmortizationSchedule({
 }: LoanAmortizationScheduleProps) {
   const { t } = useTranslation();
   const rows = useMemo(() => {
-    const projection = readLoanProjectionMetadata(metadata);
-    if (!projection) return [];
-    const latest = getLatestCurrentLoanBalance(quoteHistory);
-    if (!latest) return [];
-    const balance = Math.abs(latest.close);
-    if (balance <= 0) return [];
-    const lastDate = new Date(latest.timestamp);
-    const firstPaymentDate = addMonths(lastDate, 1);
-    const paymentCount = Math.max(
-      1,
-      projection.paymentCount ??
-        Math.ceil(
-          (new Date(projection.termEndDate ?? projection.firstPaymentDate).getTime() -
-            firstPaymentDate.getTime()) /
-            (30 * 24 * 60 * 60 * 1000),
-        ),
-    );
-    const projected = projectLoanFromEvents({
-      principal: balance,
-      annualRate: projection.annualRate,
-      paymentAmount: projection.paymentAmount,
-      paymentCount,
-      frequency: projection.frequency,
-      firstPaymentDate,
-      // The current balance already includes events up to the latest quote;
-      // replay only events that become effective after that snapshot.
-      events: readLoanEvents(metadata).filter(
-        (event) => event.effectiveDate > latest.timestamp.slice(0, 10),
-      ),
-    });
-    return [
-      ...quoteHistory
-        .filter((quote) => new Date(quote.timestamp) <= new Date())
-        .sort(
-          (left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime(),
-        )
-        .map((quote) => ({
+    const remaining = getRemainingLoanProjection(metadata, quoteHistory);
+    const events = readLoanEvents(metadata);
+    const historicalDays = new Set<string>();
+    const parsedOriginalAmount = Number(metadata.original_amount ?? metadata.purchase_price);
+    let previousBalance =
+      Number.isFinite(parsedOriginalAmount) && parsedOriginalAmount > 0
+        ? parsedOriginalAmount
+        : null;
+    const historicalRows = quoteHistory
+      .filter((quote) => new Date(quote.timestamp) <= new Date())
+      .sort(
+        (left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime(),
+      )
+      .map((quote) => {
+        const quoteDay = quote.timestamp.slice(0, 10);
+        historicalDays.add(quoteDay);
+        const extraRepayment = events.find(
+          (event): event is LoanExtraRepaymentEvent =>
+            event.type === "extra_repayment" && event.effectiveDate === quoteDay,
+        );
+        const payment = parseNoteNumber(quote.notes, "payment") ?? extraRepayment?.amount ?? null;
+        const rate = parseNoteNumber(quote.notes, "rate");
+        const openingBalance = previousBalance;
+        const interest =
+          extraRepayment !== undefined
+            ? 0
+            : rate !== null && openingBalance !== null
+              ? openingBalance * (rate / 100 / 12)
+              : undefined;
+        previousBalance = Math.abs(quote.close);
+        return {
           date: new Date(quote.timestamp),
-          payment: undefined,
-          principal: undefined,
-          interest: undefined,
-          balance: Math.abs(quote.close),
-          projected: false,
+          payment: payment ?? undefined,
+          principal:
+            extraRepayment !== undefined
+              ? extraRepayment.amount
+              : payment !== null && interest !== undefined
+                ? Math.max(0, payment - interest)
+                : undefined,
+          interest,
+          balance: previousBalance,
+          status: isConfirmedLoanBalance(quote) ? "confirmed" : "projected",
+        } as const;
+      });
+
+    return [
+      ...historicalRows,
+      ...(remaining?.projection.rows ?? [])
+        .filter((row) => !historicalDays.has(format(row.paymentDate, "yyyy-MM-dd")))
+        .map((row) => ({
+          date: row.paymentDate,
+          payment: row.payment,
+          principal: row.principal,
+          interest: row.interest,
+          balance: row.closingBalance,
+          status: "projected" as const,
         })),
-      ...projected.rows.map((row) => ({
-        date: row.paymentDate,
-        payment: row.payment,
-        principal: row.principal,
-        interest: row.interest,
-        balance: row.closingBalance,
-        projected: true,
-      })),
     ];
   }, [metadata, quoteHistory]);
 
@@ -80,9 +85,9 @@ export function LoanAmortizationSchedule({
   return (
     <section className="bg-card overflow-hidden rounded-lg border">
       <div className="border-b px-4 py-3">
-        <h3 className="font-semibold">{t("asset:valueHistory.balance")}</h3>
+        <h3 className="font-semibold">{t("asset:loanActions.amortization_schedule")}</h3>
         <p className="text-muted-foreground text-sm">
-          {t("asset:loanActions.recalculate_description")}
+          {t("asset:loanActions.amortization_description")}
         </p>
       </div>
       <div className="max-h-[520px] overflow-auto">
@@ -90,10 +95,11 @@ export function LoanAmortizationSchedule({
           <thead className="bg-muted/50 sticky top-0 z-10">
             <tr className="text-muted-foreground text-left">
               <th className="px-4 py-2">{t("asset:valueHistory.date")}</th>
-              <th className="px-4 py-2 text-right">{t("asset:valueHistory.balance")}</th>
+              <th className="px-4 py-2 text-right">{t("asset:valueHistory.payment")}</th>
               <th className="px-4 py-2 text-right">{t("asset:valueHistory.capital")}</th>
               <th className="px-4 py-2 text-right">{t("asset:valueHistory.interest")}</th>
-              <th className="px-4 py-2 text-right">{t("asset:valueHistory.notes")}</th>
+              <th className="px-4 py-2 text-right">{t("asset:valueHistory.balance")}</th>
+              <th className="px-4 py-2 text-right">{t("asset:valueHistory.status")}</th>
             </tr>
           </thead>
           <tbody>
@@ -101,7 +107,11 @@ export function LoanAmortizationSchedule({
               <tr key={`${row.date.toISOString()}-${index}`} className="border-t">
                 <td className="px-4 py-2">{format(row.date, "dd/MM/yyyy")}</td>
                 <td className="px-4 py-2 text-right">
-                  <AmountDisplay value={row.balance} currency={currency} />
+                  {row.payment === undefined ? (
+                    "—"
+                  ) : (
+                    <AmountDisplay value={row.payment} currency={currency} />
+                  )}
                 </td>
                 <td className="px-4 py-2 text-right">
                   {row.principal === undefined ? (
@@ -117,10 +127,11 @@ export function LoanAmortizationSchedule({
                     <AmountDisplay value={row.interest} currency={currency} />
                   )}
                 </td>
+                <td className="px-4 py-2 text-right">
+                  <AmountDisplay value={row.balance} currency={currency} />
+                </td>
                 <td className="text-muted-foreground px-4 py-2 text-right">
-                  {row.projected
-                    ? t("asset:loanActions.recalculate_schedule")
-                    : t("asset:valueHistory.notes")}
+                  {t(`asset:loanActions.status_${row.status}`)}
                 </td>
               </tr>
             ))}
@@ -129,4 +140,11 @@ export function LoanAmortizationSchedule({
       </div>
     </section>
   );
+}
+
+function parseNoteNumber(notes: string | null | undefined, key: string): number | null {
+  const value = notes?.match(new RegExp(`(?:^|\\|)${key}=([\\d.]+)`))?.[1];
+  if (!value) return null;
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }

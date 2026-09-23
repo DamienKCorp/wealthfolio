@@ -115,9 +115,17 @@ export function isLoanEvent(value: unknown): value is LoanEvent {
 /** Read only valid events, keeping malformed legacy metadata out of calculations. */
 export function readLoanEvents(metadata: LoanMetadata | null | undefined): LoanEvent[] {
   const raw = metadata?.[LOAN_EVENTS_METADATA_KEY];
-  if (!Array.isArray(raw)) return [];
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(value)) return [];
 
-  return raw
+  return value
     .filter(isLoanEvent)
     .sort((left, right) => left.effectiveDate.localeCompare(right.effectiveDate));
 }

@@ -12,7 +12,6 @@ interface ValueHistoryToolbarProps {
   onCancel: () => void;
   isSaving?: boolean;
   isLiability?: boolean;
-  onEarlyRepayment?: () => void;
   onCloseLoan?: () => void;
   onRecalculateSchedule?: () => void;
   onBalanceCorrection?: () => void;
@@ -30,7 +29,6 @@ export function ValueHistoryToolbar({
   onCancel,
   isSaving = false,
   isLiability = false,
-  onEarlyRepayment,
   onCloseLoan,
   onRecalculateSchedule,
   onBalanceCorrection,
@@ -39,26 +37,12 @@ export function ValueHistoryToolbar({
   const { t } = useTranslation();
 
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button variant="default" size="sm" onClick={onAddRow} disabled={isSaving}>
           <Icons.Plus className="mr-2 h-4 w-4" />
           {isLiability ? t("asset:valueToolbar.add_balance") : t("asset:valueToolbar.add_value")}
         </Button>
-
-        {isLiability && onEarlyRepayment && (
-          <Button variant="outline" size="sm" onClick={onEarlyRepayment} disabled={isSaving}>
-            <Icons.HandCoins className="mr-2 h-4 w-4" />
-            {t("asset:loanActions.early_repayment")}
-          </Button>
-        )}
-
-        {isLiability && onCloseLoan && (
-          <Button variant="outline" size="sm" onClick={onCloseLoan} disabled={isSaving}>
-            <Icons.Lock className="mr-2 h-4 w-4" />
-            {t("asset:loanActions.close_loan")}
-          </Button>
-        )}
 
         {isLiability && onRecalculateSchedule && (
           <Button variant="outline" size="sm" onClick={onRecalculateSchedule} disabled={isSaving}>
@@ -67,15 +51,24 @@ export function ValueHistoryToolbar({
           </Button>
         )}
 
-        {isLiability && onBalanceCorrection && (
-          <Button variant="outline" size="sm" onClick={onBalanceCorrection} disabled={isSaving}>
-            {t("asset:loanActions.recalculate_schedule")}
+        {isLiability && onExtraRepayment && (
+          <Button variant="outline" size="sm" onClick={onExtraRepayment} disabled={isSaving}>
+            <Icons.HandCoins className="mr-2 h-4 w-4" />
+            {t("asset:loanActions.extra_repayment")}
           </Button>
         )}
 
-        {isLiability && onExtraRepayment && (
-          <Button variant="outline" size="sm" onClick={onExtraRepayment} disabled={isSaving}>
-            {t("asset:loanActions.early_repayment")}
+        {isLiability && onBalanceCorrection && (
+          <Button variant="outline" size="sm" onClick={onBalanceCorrection} disabled={isSaving}>
+            <Icons.Pencil className="mr-2 h-4 w-4" />
+            {t("asset:loanActions.balance_correction")}
+          </Button>
+        )}
+
+        {isLiability && onCloseLoan && (
+          <Button variant="outline" size="sm" onClick={onCloseLoan} disabled={isSaving}>
+            <Icons.Lock className="mr-2 h-4 w-4" />
+            {t("asset:loanActions.close_loan")}
           </Button>
         )}
 
