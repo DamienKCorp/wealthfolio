@@ -227,8 +227,8 @@ export function ValueHistoryDataGrid({
         (frequency !== "monthly"
           ? daysFromOrigination >= 0 && daysFromOrigination % 14 === 0
           : isLastDayOfMonth(loanOriginationDate)
-          ? isLastDayOfMonth(curr.date)
-          : curr.date.getDate() === loanOriginationDate.getDate());
+            ? isLastDayOfMonth(curr.date)
+            : curr.date.getDate() === loanOriginationDate.getDate());
       // A manually recorded balance between payment dates is a snapshot, not
       // an instalment. Keep it out of the capital/interest calculation.
       if (!isScheduledPayment && !isEarlyRepayment && !isContractualPaymentDate) continue;

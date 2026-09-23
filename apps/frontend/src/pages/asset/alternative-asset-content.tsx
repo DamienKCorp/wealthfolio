@@ -319,10 +319,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       ...(termEndDate ? { termEndDate: formatDateISO(termEndDate) } : {}),
     });
     const updates: Record<string, string> = Object.fromEntries(
-      Object.entries(nextMetadata).map(([key, value]) => [
-        key,
-        serializeLoanMetadataValue(value),
-      ]),
+      Object.entries(nextMetadata).map(([key, value]) => [key, serializeLoanMetadataValue(value)]),
     );
     updates.interest_rate = String(newRate);
     updates.payment_frequency = loanFrequency;
@@ -353,10 +350,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
         : { type: mode, effectiveDate: effectiveDay, amount: appliedAmount };
     const nextMetadata = appendLoanEvent(metadata, event);
     const updates: Record<string, string> = Object.fromEntries(
-      Object.entries(nextMetadata).map(([key, value]) => [
-        key,
-        serializeLoanMetadataValue(value),
-      ]),
+      Object.entries(nextMetadata).map(([key, value]) => [key, serializeLoanMetadataValue(value)]),
     );
 
     await saveQuoteMutation.mutateAsync({

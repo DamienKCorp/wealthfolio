@@ -140,7 +140,7 @@ export function getLoanFrequencyAtDate(
   let frequency: LoanPaymentFrequency =
     raw === "monthly" || raw === "biweekly" || raw === "accelerated_biweekly"
       ? raw
-      : projection?.frequency ?? "monthly";
+      : (projection?.frequency ?? "monthly");
   for (const event of readLoanEvents(metadata)) {
     if (event.effectiveDate > date) break;
     if (event.type === "payment_frequency_change") frequency = event.frequency;
