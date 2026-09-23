@@ -63,7 +63,6 @@ import { LinkedAssetSection, LinkedLiabilitiesSection } from "./linked-liabiliti
 import {
   appendLoanEvent,
   getLoanFrequencyAtDate,
-  LOAN_EVENTS_METADATA_KEY,
   type LoanEvent,
   type LoanMetadata,
   type LoanPaymentFrequency,
@@ -81,8 +80,7 @@ import type { DatedLoanProjectionRow } from "./alternative-assets/lib/loan-calcu
 function serializeLoanMetadataValue(value: unknown): string {
   if (value === undefined || value === null) return "";
   if (typeof value === "string") return value;
-  if (typeof value === "object") return JSON.stringify(value);
-  return String(value);
+  return JSON.stringify(value) ?? "";
 }
 
 interface AlternativeAssetContentProps {
@@ -215,7 +213,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   // recalculated from loan metadata and events and are deliberately not
   // persisted as quotes. Existing generated quotes remain untouched for the
   // compatibility/migration work planned in the next commit.
-  const replaceGeneratedLoanSchedule = async (
+  const replaceGeneratedLoanSchedule = (
     _schedule: ReturnType<typeof buildLoanSchedule>,
     _effectiveDate: Date,
   ) => undefined;
@@ -269,7 +267,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
       .filter((q) => new Date(q.timestamp) <= today);
     const latestQuote = sortedPast.at(-1);
-    let latestBalance = latestQuote ? Math.abs(latestQuote.close) : currentBalance;
+    const latestBalance = latestQuote ? Math.abs(latestQuote.close) : currentBalance;
 
     const remainingN = scheduleWindow.paymentCount;
     const P = calculateMonthlyPayment(latestBalance, newRate, remainingN, loanFrequency);
