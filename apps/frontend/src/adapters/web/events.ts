@@ -46,6 +46,9 @@ class ServerEventBridge {
     );
     this.eventSource.onerror = (error) => {
       logger.warn("Portfolio event stream error", error);
+      // The server ends this stream when the profile session is revoked or
+      // idle-expires; with no polling, this is how an untouched screen locks.
+      window.dispatchEvent(new Event("wealthfolio:event-stream-error"));
     };
   }
 
@@ -154,6 +157,11 @@ export const listenMarketSyncComplete = <T>(handler: EventCallback<T>): Promise<
 
 export const listenMarketSyncError = <T>(handler: EventCallback<T>): Promise<UnlistenFn> => {
   return portfolioEventBridge.listen("market:sync-error", handler);
+};
+
+/** Restore operation changes for this profile, including from other tabs. */
+export const listenDeviceSyncRestore = <T>(handler: EventCallback<T>): Promise<UnlistenFn> => {
+  return portfolioEventBridge.listen("device-sync:restore-operation", handler);
 };
 
 export const listenAssetClassificationsChanged = <T>(
