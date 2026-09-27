@@ -845,7 +845,9 @@ export const AssetProfilePage = () => {
         ? (profileMetadata as Record<string, unknown>).annualExpenseRatioPct
         : null;
     const annualFeeRatePct =
-      typeof providerFeeRate === "number" && Number.isFinite(providerFeeRate) && providerFeeRate >= 0
+      typeof providerFeeRate === "number" &&
+      Number.isFinite(providerFeeRate) &&
+      providerFeeRate >= 0
         ? providerFeeRate
         : typeof manualFeeRate === "number" && Number.isFinite(manualFeeRate) && manualFeeRate >= 0
           ? manualFeeRate
