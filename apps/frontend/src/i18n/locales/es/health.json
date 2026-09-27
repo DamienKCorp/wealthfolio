@@ -161,6 +161,7 @@
     "fund_fee_stale_data": {
       "title_one": "{{count}} tasa de gastos tiene más de 90 días o no tiene fecha",
       "title_other": "{{count}} tasas de gastos tienen más de 90 días o no tienen fecha",
+      "title_many": "{{count}} tasas de gastos tienen más de 90 días o no tienen fecha",
       "message": "Algunos productos de la cartera no tienen fecha de actualización de sus gastos o esta es de hace más de 90 días. Revisa los gastos de los productos afectados."
     }
   },

@@ -161,6 +161,7 @@
     "fund_fee_stale_data": {
       "title_one": "{{count}} dato sui costi ha più di 90 giorni o non ha una data",
       "title_other": "{{count}} dati sui costi hanno più di 90 giorni o non hanno una data",
+      "title_many": "{{count}} dati sui costi hanno più di 90 giorni o non hanno una data",
       "message": "Alcuni prodotti in portafoglio non hanno una data di aggiornamento dei costi oppure risale a oltre 90 giorni fa. Controlla i costi dei prodotti interessati."
     }
   },
