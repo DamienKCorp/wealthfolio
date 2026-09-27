@@ -103,6 +103,9 @@ interface AssetDetailData {
   costBasis: number;
   averagePrice: number;
   portfolioPercent: number;
+  annualFeeRatePct: number | null;
+  annualFeeCost: number | null;
+  annualFeeCurrency: string;
   todaysReturn: number | null;
   todaysReturnPercent: number | null;
   unrealizedPnl: number | null;

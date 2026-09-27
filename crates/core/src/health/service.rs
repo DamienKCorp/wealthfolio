@@ -100,15 +100,14 @@ fn fee_entry_is_stale(asset: &Asset, now: chrono::DateTime<Utc>) -> Option<(f64,
                 .and_then(|value| value.get("annualExpenseRatioUpdatedAt"))
                 .and_then(serde_json::Value::as_str),
         )
-    } else if let Some(rate) = manual_rate {
+    } else {
+        let rate = manual_rate?;
         (
             rate,
             metadata
                 .get("annualExpenseRatioUpdatedAt")
                 .and_then(serde_json::Value::as_str),
         )
-    } else {
-        return None;
     };
 
     let updated_at = updated_at.map(ToOwned::to_owned);

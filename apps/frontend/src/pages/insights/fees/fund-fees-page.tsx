@@ -415,7 +415,12 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
                           const fees = Number(entry.value);
                           if (!Number.isFinite(fees)) return null;
                           const seriesKey = String(entry.dataKey);
-                          const seriesLabel = projectionChartConfig[seriesKey]?.label ?? seriesKey;
+                          const seriesLabel =
+                            seriesKey in projectionChartConfig
+                              ? projectionChartConfig[
+                                  seriesKey as keyof typeof projectionChartConfig
+                                ].label
+                              : seriesKey;
                           return (
                             <div
                               key={seriesKey}
@@ -521,7 +526,7 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
                     Number.isFinite(Date.parse(row.updatedAt)) && (
                       <span>
                         {t("insights:insights.fees.updated_on", {
-                          date: dateFormatting.formatCalendarDate(new Date(row.updatedAt)),
+                          date: dateFormatting.formatDate(new Date(row.updatedAt)),
                         })}
                       </span>
                     )}
