@@ -99,10 +99,7 @@ export function useImportRulePreset() {
         `Imported ${result.added} rule${result.added === 1 ? "" : "s"}${updatedSuffix}${skippedSuffix}.`,
       );
     },
-    onError: (error) => {
-      const details = error instanceof Error ? error.message : String(error);
-      toast.error(details ? `Failed to import preset: ${details}` : "Failed to import preset.");
-    },
+    onError: () => toast.error("Failed to import preset."),
   });
 }
 
