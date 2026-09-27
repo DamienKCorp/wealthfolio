@@ -71,7 +71,7 @@
       "accounts_count_many": "{{count}} cuentas",
       "pnl_current_holdings": "Posiciones actuales"
     },
-    "tab_fees": "Comisiones",
+    "tab_fees": "Análisis de comisiones",
     "fees": {
       "title": "Comisiones de fondos",
       "products_title": "Productos",

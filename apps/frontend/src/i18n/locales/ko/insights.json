@@ -67,7 +67,7 @@
       "accounts_count_other": "계좌 {{count}}개",
       "pnl_current_holdings": "현재 보유 종목"
     },
-    "tab_fees": "수수료",
+    "tab_fees": "수수료 스캐너",
     "fees": {
       "title": "펀드 수수료",
       "products_title": "상품",

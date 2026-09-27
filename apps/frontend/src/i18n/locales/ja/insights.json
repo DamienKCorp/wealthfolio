@@ -67,7 +67,7 @@
       "accounts_count_other": "{{count}}口座",
       "pnl_current_holdings": "現在の保有銘柄"
     },
-    "tab_fees": "手数料",
+    "tab_fees": "手数料スキャナー",
     "fees": {
       "title": "ファンド手数料",
       "products_title": "商品",

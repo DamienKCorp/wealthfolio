@@ -68,7 +68,7 @@
       "accounts_count_other": "{{count}} Konten",
       "pnl_current_holdings": "Aktuelle Positionen"
     },
-    "tab_fees": "Gebühren",
+    "tab_fees": "Gebühren-Check",
     "fees": {
       "title": "Fondskosten",
       "products_title": "Produkte",

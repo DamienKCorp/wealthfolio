@@ -71,7 +71,7 @@
       "accounts_count_many": "{{count}} contas",
       "pnl_current_holdings": "Posições atuais"
     },
-    "tab_fees": "Taxas",
+    "tab_fees": "Análise de taxas",
     "fees": {
       "title": "Custos dos fundos",
       "products_title": "Produtos",

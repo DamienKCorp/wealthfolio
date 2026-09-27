@@ -67,7 +67,7 @@
       "accounts_count_other": "{{count}} 个账户",
       "pnl_current_holdings": "当前持仓"
     },
-    "tab_fees": "费用",
+    "tab_fees": "费用扫描",
     "fees": {
       "title": "基金费用",
       "products_title": "产品",

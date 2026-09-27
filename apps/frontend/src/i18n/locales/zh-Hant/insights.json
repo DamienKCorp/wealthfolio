@@ -68,7 +68,7 @@
       "accounts_count_other": "{{count}} 個帳戶",
       "pnl_current_holdings": "目前持有部位"
     },
-    "tab_fees": "費用",
+    "tab_fees": "費用掃描",
     "fees": {
       "title": "基金費用",
       "products_title": "產品",

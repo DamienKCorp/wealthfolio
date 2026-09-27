@@ -68,7 +68,7 @@
       "accounts_count_one": "{{count}} account",
       "accounts_count_other": "{{count}} accounts"
     },
-    "tab_fees": "Fees",
+    "tab_fees": "Fee Scanner",
     "fees": {
       "title": "Fund fees",
       "products_title": "Products",
