@@ -20,6 +20,7 @@ use crate::activities::{
 };
 use crate::assets::{Asset, AssetKind, AssetServiceTrait, QuoteMode};
 use crate::errors::Result;
+use crate::fx::currency::normalize_currency_code;
 use crate::lots::LotRepositoryTrait;
 use crate::portfolio::economic_events::{ActivityEconomicsResolver, BasisStatus};
 use crate::portfolio::holdings::{HoldingType, HoldingsServiceTrait};
@@ -32,6 +33,7 @@ use crate::portfolio::valuation::{DailyAccountValuation, ValuationServiceTrait};
 use crate::quotes::QuoteServiceTrait;
 use crate::taxonomies::TaxonomyServiceTrait;
 use crate::utils::time_utils::{activity_date_in_tz, parse_user_timezone_or_default, user_today};
+use wealthfolio_market_data::mic_to_currency;
 
 use super::checks::{
     AccountConfigurationCheck, AssetHoldingInfo, ClassificationCheck, ConsistencyIssueInfo,
@@ -176,6 +178,201 @@ fn stale_fee_health_issue(
             .data_hash(data_hash)
             .build(),
     )
+}
+
+fn asset_fund_quote_type(asset: &Asset) -> Option<&str> {
+    asset
+        .metadata
+        .as_ref()?
+        .get("profile")?
+        .get("quoteType")?
+        .as_str()
+}
+
+fn is_known_fund(asset: &Asset) -> bool {
+    asset_fund_quote_type(asset).is_some_and(|quote_type| {
+        matches!(
+            quote_type.trim().to_ascii_uppercase().as_str(),
+            "ETF" | "MUTUALFUND" | "MUTUAL_FUND" | "MUTUAL FUND"
+        )
+    })
+}
+
+fn asset_fee_rate(asset: &Asset) -> Option<f64> {
+    let metadata = asset.metadata.as_ref()?;
+    let provider_rate = metadata
+        .get("profile")
+        .and_then(|profile| profile.get("annualExpenseRatioPct"))
+        .and_then(serde_json::Value::as_f64)
+        .filter(|rate| rate.is_finite());
+    provider_rate.or_else(|| {
+        metadata
+            .get("annualExpenseRatioPct")
+            .and_then(serde_json::Value::as_f64)
+            .filter(|rate| rate.is_finite())
+    })
+}
+
+fn fee_currency_mismatch(asset: &Asset) -> Option<(String, String)> {
+    let mic = asset.instrument_exchange_mic.as_deref()?;
+    let expected_currency = mic_to_currency(mic)?;
+    let actual_currency = asset.quote_ccy.trim();
+    if actual_currency.is_empty()
+        || normalize_currency_code(actual_currency)
+            .eq_ignore_ascii_case(normalize_currency_code(expected_currency))
+    {
+        return None;
+    }
+    Some((expected_currency.to_string(), actual_currency.to_string()))
+}
+
+fn fund_fee_business_health_issues(
+    assets: &[Asset],
+    held_asset_ids: &HashSet<String>,
+) -> Vec<HealthIssue> {
+    let held_assets: Vec<&Asset> = assets
+        .iter()
+        .filter(|asset| held_asset_ids.contains(&asset.id))
+        .collect();
+    let missing: Vec<&Asset> = held_assets
+        .iter()
+        .copied()
+        .filter(|asset| is_known_fund(asset) && asset_fee_rate(asset).is_none())
+        .collect();
+    let unusual: Vec<(&Asset, f64)> = held_assets
+        .iter()
+        .copied()
+        .filter_map(|asset| {
+            let rate = asset_fee_rate(asset)?;
+            (rate < 0.0 || rate > 5.0).then_some((asset, rate))
+        })
+        .collect();
+    let currency_mismatches: Vec<(&Asset, String, String)> = held_assets
+        .iter()
+        .copied()
+        .filter(|asset| is_known_fund(asset) || asset_fee_rate(asset).is_some())
+        .filter_map(|asset| {
+            fee_currency_mismatch(asset).map(|(expected, actual)| (asset, expected, actual))
+        })
+        .collect();
+
+    let mut issues = Vec::new();
+    if !missing.is_empty() {
+        let mut affected: Vec<&Asset> = missing;
+        affected.sort_by(|left, right| left.id.cmp(&right.id));
+        let data_hash = affected
+            .iter()
+            .map(|asset| asset.id.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
+        let items = affected
+            .iter()
+            .map(|asset| {
+                let symbol = asset
+                    .display_code
+                    .clone()
+                    .or_else(|| asset.name.clone())
+                    .unwrap_or_else(|| asset.id.clone());
+                AffectedItem::asset_with_name(asset.id.clone(), symbol, asset.name.clone())
+            })
+            .collect::<Vec<_>>();
+        let count = affected.len() as u32;
+        issues.push(
+            HealthIssue::builder()
+                .id("fund_fee_missing")
+                .severity(Severity::Warning)
+                .category(HealthCategory::DataConsistency)
+                .title("Fund fee data is missing")
+                .message("Some held funds have no annual fee rate recorded.")
+                .code("fund_fee_missing")
+                .param("count", count)
+                .affected_count(count)
+                .affected_items(items)
+                .data_hash(data_hash)
+                .build(),
+        );
+    }
+    if !unusual.is_empty() {
+        let mut affected = unusual;
+        affected.sort_by(|left, right| left.0.id.cmp(&right.0.id));
+        let data_hash = affected
+            .iter()
+            .map(|(asset, rate)| format!("{}:{rate}", asset.id))
+            .collect::<Vec<_>>()
+            .join("|");
+        let items = affected
+            .iter()
+            .map(|(asset, rate)| {
+                let symbol = asset
+                    .display_code
+                    .clone()
+                    .or_else(|| asset.name.clone())
+                    .unwrap_or_else(|| asset.id.clone());
+                AffectedItem::asset_with_name(
+                    asset.id.clone(),
+                    format!("{symbol} · {rate}%"),
+                    asset.name.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let count = affected.len() as u32;
+        issues.push(
+            HealthIssue::builder()
+                .id("fund_fee_unusual_rate")
+                .severity(Severity::Warning)
+                .category(HealthCategory::DataConsistency)
+                .title("Fund fee rate needs review")
+                .message("Some held funds have a negative fee rate or an annual rate above 5%.")
+                .code("fund_fee_unusual_rate")
+                .param("count", count)
+                .affected_count(count)
+                .affected_items(items)
+                .data_hash(data_hash)
+                .build(),
+        );
+    }
+    if !currency_mismatches.is_empty() {
+        let mut affected = currency_mismatches;
+        affected.sort_by(|left, right| left.0.id.cmp(&right.0.id));
+        let data_hash = affected
+            .iter()
+            .map(|(asset, expected, actual)| format!("{}:{expected}:{actual}", asset.id))
+            .collect::<Vec<_>>()
+            .join("|");
+        let items = affected
+            .iter()
+            .map(|(asset, expected, actual)| {
+                let symbol = asset
+                    .display_code
+                    .clone()
+                    .or_else(|| asset.name.clone())
+                    .unwrap_or_else(|| asset.id.clone());
+                AffectedItem::asset_with_name(
+                    asset.id.clone(),
+                    format!("{symbol} · {actual} / {expected}"),
+                    asset.name.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let count = affected.len() as u32;
+        issues.push(
+            HealthIssue::builder()
+                .id("fund_fee_currency_mismatch")
+                .severity(Severity::Warning)
+                .category(HealthCategory::DataConsistency)
+                .title("Fund quote currency may be inconsistent")
+                .message(
+                    "A fund quote currency differs from the known currency of its listing venue.",
+                )
+                .code("fund_fee_currency_mismatch")
+                .param("count", count)
+                .affected_count(count)
+                .affected_items(items)
+                .data_hash(data_hash)
+                .build(),
+        );
+    }
+    issues
 }
 
 impl HealthService {
@@ -740,9 +937,13 @@ impl HealthService {
             );
             Vec::new()
         });
-        if let Some(fee_issue) = stale_fee_health_issue(&assets, &held_asset_ids, Utc::now()) {
+        let mut fee_issues = fund_fee_business_health_issues(&assets, &held_asset_ids);
+        if let Some(stale_issue) = stale_fee_health_issue(&assets, &held_asset_ids, Utc::now()) {
+            fee_issues.push(stale_issue);
+        }
+        if !fee_issues.is_empty() {
             let mut issues = status.issues;
-            issues.push(fee_issue);
+            issues.extend(fee_issues);
             let issues = self.filter_dismissed_issues(issues).await?;
             status = HealthStatus::from_issues(issues);
             *self.cached_status.write().await = Some(CachedStatus {

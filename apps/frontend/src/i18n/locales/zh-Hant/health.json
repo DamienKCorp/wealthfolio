@@ -137,6 +137,18 @@
       "title_one": "{{count}} 筆費用資料已超過 90 天或缺少日期",
       "title_other": "{{count}} 筆費用資料已超過 90 天或缺少日期",
       "message": "部分持倉產品的費用資料缺少更新日期，或上次更新已超過 90 天。請檢查相關產品的費用資訊。"
+    },
+    "fund_fee_missing": {
+      "title_other": "{{count}} 檔基金缺少年度費用率",
+      "message": "部分持有的 ETF 或共同基金未記錄年度費用率。請檢查產品分類，並新增或確認費用率。"
+    },
+    "fund_fee_unusual_rate": {
+      "title_other": "請檢查 {{count}} 檔基金的異常費用率",
+      "message": "低於 0% 或高於 5% 的費率會標示供檢查。較高費用也可能合理，請先確認來源再修改費率。"
+    },
+    "fund_fee_currency_mismatch": {
+      "title_other": "{{count}} 檔基金的報價貨幣可能不一致",
+      "message": "基金的報價貨幣與已知上市市場貨幣不同。請檢查代碼、交易市場及貨幣；以其他貨幣上市也可能是刻意安排。"
     }
   },
   "page": {

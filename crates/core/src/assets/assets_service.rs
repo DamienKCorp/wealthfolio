@@ -1239,6 +1239,50 @@ impl AssetService {
         };
 
         // Build provider profile metadata for storage
+        let previous_fee_snapshot =
+            provider_profile
+                .annual_expense_ratio_pct
+                .and_then(|new_rate| {
+                    let metadata = existing_asset.metadata.as_ref();
+                    let previous_profile = metadata
+                        .and_then(|value| value.get("profile"))
+                        .and_then(serde_json::Value::as_object);
+                    let previous_provider_rate = previous_profile
+                        .and_then(|profile| profile.get("annualExpenseRatioPct"))
+                        .and_then(serde_json::Value::as_f64)
+                        .filter(|rate| rate.is_finite() && *rate >= 0.0);
+                    let previous_manual_rate = metadata
+                        .and_then(|value| value.get("annualExpenseRatioPct"))
+                        .and_then(serde_json::Value::as_f64)
+                        .filter(|rate| rate.is_finite() && *rate >= 0.0);
+                    let previous_source = if previous_provider_rate.is_some() {
+                        "provider"
+                    } else if previous_manual_rate.is_some() {
+                        "manual"
+                    } else {
+                        "missing"
+                    };
+
+                    if previous_source == "provider" && previous_provider_rate == Some(new_rate) {
+                        return None;
+                    }
+
+                    let previous_updated_at = if previous_source == "provider" {
+                        previous_profile
+                            .and_then(|profile| profile.get("annualExpenseRatioUpdatedAt"))
+                    } else {
+                        metadata.and_then(|value| value.get("annualExpenseRatioUpdatedAt"))
+                    };
+
+                    Some(serde_json::json!({
+                        "rate": previous_provider_rate.or(previous_manual_rate),
+                        "source": previous_source,
+                        "updatedAt": previous_updated_at,
+                        "providerSource": previous_profile
+                            .and_then(|profile| profile.get("annualExpenseRatioSource")),
+                    }))
+                });
+
         let mut profile_metadata = serde_json::Map::new();
         if let Some(ref sectors) = provider_profile.sectors {
             profile_metadata.insert(
@@ -1339,6 +1383,17 @@ impl AssetService {
             );
             Some(serde_json::Value::Object(merged))
         };
+
+        if let Some(previous_fee_snapshot) = previous_fee_snapshot {
+            let metadata = updated_metadata
+                .get_or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+            if let Some(metadata) = metadata.as_object_mut() {
+                metadata.insert(
+                    "annualExpenseRatioPrevious".to_string(),
+                    previous_fee_snapshot,
+                );
+            }
+        }
 
         // Enrich US Treasury bonds with maturity/coupon data from TreasuryDirect
         // when the bond spec is missing this data (needed for yield-curve pricing).
@@ -1905,6 +1960,26 @@ impl AssetServiceTrait for AssetService {
         let existing_asset = self.asset_repository.get_by_id(asset_id)?;
         let effective_quote_mode = payload.quote_mode.unwrap_or(existing_asset.quote_mode);
 
+        let previous_manual_fee = existing_asset
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("annualExpenseRatioPct"))
+            .cloned();
+        let updated_manual_fee = payload
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("annualExpenseRatioPct"))
+            .cloned();
+        if previous_manual_fee != updated_manual_fee {
+            if let Some(metadata) = payload
+                .metadata
+                .as_mut()
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                metadata.remove("annualExpenseRatioPrevious");
+            }
+        }
+
         if let Some(raw_mic) = payload.instrument_exchange_mic.as_ref() {
             let normalized_mic = raw_mic.trim().to_uppercase();
             if !normalized_mic.is_empty() {
@@ -1991,17 +2066,21 @@ impl AssetServiceTrait for AssetService {
                 .clone()
                 .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
             let mut removed_provider_fee = false;
-            if let Some(profile) = metadata
-                .as_object_mut()
-                .and_then(|metadata| metadata.get_mut("profile"))
-                .and_then(serde_json::Value::as_object_mut)
-            {
-                for key in [
-                    "annualExpenseRatioPct",
-                    "annualExpenseRatioSource",
-                    "annualExpenseRatioUpdatedAt",
-                ] {
-                    removed_provider_fee |= profile.remove(key).is_some();
+            if let Some(metadata_object) = metadata.as_object_mut() {
+                removed_provider_fee |= metadata_object
+                    .remove("annualExpenseRatioPrevious")
+                    .is_some();
+                if let Some(profile) = metadata_object
+                    .get_mut("profile")
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    for key in [
+                        "annualExpenseRatioPct",
+                        "annualExpenseRatioSource",
+                        "annualExpenseRatioUpdatedAt",
+                    ] {
+                        removed_provider_fee |= profile.remove(key).is_some();
+                    }
                 }
             }
             if removed_provider_fee {

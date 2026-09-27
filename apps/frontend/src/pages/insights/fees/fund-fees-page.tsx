@@ -3,7 +3,10 @@ import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useAccountScopeStore } from "@/lib/account-scope-store";
 import { useAssets } from "@/pages/asset/hooks/use-assets";
-import type { AccountScope } from "@/lib/types";
+import { enrichAssetProfile, updateAssetProfile } from "@/adapters";
+import { QueryKeys } from "@/lib/query-keys";
+import type { AccountScope, Asset } from "@/lib/types";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AmountDisplay,
   EmptyPlaceholder,
@@ -13,6 +16,7 @@ import {
   useNumberFormatting,
 } from "@wealthfolio/ui";
 import { Card, CardContent, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
+import { Button } from "@wealthfolio/ui/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -38,10 +42,42 @@ interface FundFeesPageProps {
 
 const PROJECTION_YEARS = [5, 10, 15, 20] as const;
 const DEFAULT_ANNUAL_RETURN_PCT = 5;
+const FEE_REVIEW_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 
 type FundType = "etf" | "mutual_fund" | "other";
 type FundTypeFilter = "all" | FundType;
 type FeeBand = "all" | "low" | "medium" | "high";
+
+interface PreviousFeeSnapshot {
+  rate: number | null;
+  source: "provider" | "manual" | "missing";
+  updatedAt?: string | null;
+  providerSource?: string | null;
+}
+
+function getPreviousFeeSnapshot(asset: Asset): PreviousFeeSnapshot | null {
+  const value = asset.metadata?.annualExpenseRatioPrevious;
+  if (!value || typeof value !== "object") return null;
+  const snapshot = value as Record<string, unknown>;
+  const source = snapshot.source;
+  if (source !== "provider" && source !== "manual" && source !== "missing") return null;
+  return {
+    rate:
+      typeof snapshot.rate === "number" && Number.isFinite(snapshot.rate) && snapshot.rate >= 0
+        ? snapshot.rate
+        : null,
+    source,
+    updatedAt: typeof snapshot.updatedAt === "string" ? snapshot.updatedAt : null,
+    providerSource: typeof snapshot.providerSource === "string" ? snapshot.providerSource : null,
+  };
+}
+
+function getProviderFeeRate(asset: Asset): number | null {
+  const profile = asset.metadata?.profile;
+  if (!profile || typeof profile !== "object") return null;
+  const rate = (profile as Record<string, unknown>).annualExpenseRatioPct;
+  return typeof rate === "number" && Number.isFinite(rate) && rate >= 0 ? rate : null;
+}
 
 function getFundType(quoteType: unknown): FundType {
   if (typeof quoteType !== "string") return "other";
@@ -68,7 +104,8 @@ const feeRateTone = (rate: number) =>
       : "bg-destructive/10 text-destructive";
 
 export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
   const setAccountScope = useAccountScopeStore((state) => state.setScope);
   const {
     holdings,
@@ -82,6 +119,16 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
   const formatting = useNumberFormatting();
   const [fundTypeFilter, setFundTypeFilter] = useState<FundTypeFilter>("all");
   const [feeBand, setFeeBand] = useState<FeeBand>("all");
+  const [scenarioAReductionPp, setScenarioAReductionPp] = useState(0.1);
+  const [scenarioBReductionPp, setScenarioBReductionPp] = useState(0.2);
+  const [isRefreshingMarketFees, setIsRefreshingMarketFees] = useState(false);
+  const [restoringFeeAssetId, setRestoringFeeAssetId] = useState<string | null>(null);
+  const [marketFeeRefreshMessage, setMarketFeeRefreshMessage] = useState<string | null>(null);
+  const formatPercentagePoints = (value: number) =>
+    new Intl.NumberFormat(i18n.resolvedLanguage || i18n.language, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
 
   const allRows = useMemo(() => {
     const valuesByAsset = new Map<string, { value: number; currency: string }>();
@@ -111,15 +158,26 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
         const updatedAt = hasProviderRate
           ? providerProfile?.annualExpenseRatioUpdatedAt
           : asset.metadata?.annualExpenseRatioUpdatedAt;
+        const updatedAtValue = typeof updatedAt === "string" ? updatedAt : null;
+        const updatedAtTimestamp = updatedAtValue ? Date.parse(updatedAtValue) : Number.NaN;
+        const hasValidUpdatedAt =
+          updatedAtValue !== null &&
+          /T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(updatedAtValue) &&
+          Number.isFinite(updatedAtTimestamp);
         return [
           {
             id: asset.id,
+            asset,
+            previousFee: getPreviousFeeSnapshot(asset),
             name: asset.name || asset.displayCode || "",
             symbol: asset.displayCode || "",
             fundType: getFundType(providerProfile?.quoteType),
             feeRate,
             source: hasProviderRate ? "provider" : hasManualRate ? "manual" : "missing",
-            updatedAt: typeof updatedAt === "string" ? updatedAt : null,
+            updatedAt: updatedAtValue,
+            needsReview:
+              feeRate !== null &&
+              (!hasValidUpdatedAt || Date.now() - updatedAtTimestamp > FEE_REVIEW_MAX_AGE_MS),
             value: position.value,
             annualCost: feeRate === null ? 0 : position.value * (feeRate / 100),
             currency: position.currency,
@@ -147,7 +205,22 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
     (row) =>
       row.source === "missing" && (fundTypeFilter === "all" || row.fundType === fundTypeFilter),
   ).length;
-  const missingFeeRows = allRows.filter((row) => row.source === "missing");
+  const missingFeeRows = allRows.filter(
+    (row) =>
+      row.source === "missing" && (fundTypeFilter === "all" || row.fundType === fundTypeFilter),
+  );
+  const reviewFeeRows = rows.filter((row) => row.needsReview);
+  const marketFeeChangeRows = allRows.filter(
+    (row) => row.previousFee && (fundTypeFilter === "all" || row.fundType === fundTypeFilter),
+  );
+  const refreshableRows = allRows.filter(
+    (row) =>
+      row.asset.quoteMode === "MARKET" &&
+      Boolean(row.asset.instrumentSymbol || row.asset.displayCode) &&
+      (row.fundType !== "other" || row.feeRate !== null) &&
+      (fundTypeFilter === "all" || row.fundType === fundTypeFilter) &&
+      (row.feeRate === null || matchesFeeBand(row.feeRate, feeBand)),
+  );
   const totalAnnualCost = rows.reduce((total, row) => total + row.annualCost, 0);
   const totalCurrentValue = simulationRows.reduce((total, row) => total + row.value, 0);
   const weightedAverageRate =
@@ -165,24 +238,106 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
     return Array.from({ length: 21 }, (_, year) => ({
       year,
       current: projectCapital(year, 0),
-      minus010: projectCapital(year, 0.1),
-      minus020: projectCapital(year, 0.2),
+      scenarioA: projectCapital(year, scenarioAReductionPp),
+      scenarioB: projectCapital(year, scenarioBReductionPp),
     }));
-  }, [simulationRows]);
+  }, [simulationRows, scenarioAReductionPp, scenarioBReductionPp]);
   const projectionChartConfig = {
     current: {
       label: t("insights:insights.fees.scenario_current"),
       color: "var(--chart-1)",
     },
-    minus010: {
-      label: t("insights:insights.fees.scenario_minus_010"),
+    scenarioA: {
+      label: t("insights:insights.fees.scenario_fee_reduction", {
+        value: formatPercentagePoints(scenarioAReductionPp),
+      }),
       color: "var(--chart-2)",
     },
-    minus020: {
-      label: t("insights:insights.fees.scenario_minus_020"),
+    scenarioB: {
+      label: t("insights:insights.fees.scenario_fee_reduction", {
+        value: formatPercentagePoints(scenarioBReductionPp),
+      }),
       color: "var(--chart-3)",
     },
   } satisfies ChartConfig;
+  const cacheUpdatedAsset = (updatedAsset: Asset) => {
+    queryClient.setQueryData<Asset[]>([QueryKeys.ASSETS], (current) =>
+      (current ?? assets).map((asset) => (asset.id === updatedAsset.id ? updatedAsset : asset)),
+    );
+    queryClient.setQueryData([QueryKeys.ASSET_DATA, updatedAsset.id], updatedAsset);
+  };
+  const handleRefreshMarketFees = async () => {
+    if (isRefreshingMarketFees || refreshableRows.length === 0) return;
+    setIsRefreshingMarketFees(true);
+    setMarketFeeRefreshMessage(null);
+    let changed = 0;
+    let failed = 0;
+    for (const row of refreshableRows) {
+      try {
+        const updatedAsset = await enrichAssetProfile(row.id);
+        const marketRate = getProviderFeeRate(updatedAsset);
+        if (marketRate !== null && (row.source !== "provider" || row.feeRate !== marketRate)) {
+          changed += 1;
+        }
+        cacheUpdatedAsset(updatedAsset);
+      } catch {
+        failed += 1;
+      }
+    }
+    setMarketFeeRefreshMessage(
+      t("insights:insights.fees.market_fee_refresh_result", {
+        checked: refreshableRows.length,
+        changed,
+        failed,
+      }),
+    );
+    setIsRefreshingMarketFees(false);
+  };
+  const handleUndoMarketFeeUpdate = async (row: (typeof allRows)[number]) => {
+    if (!row.previousFee || restoringFeeAssetId) return;
+    setRestoringFeeAssetId(row.id);
+    const metadata = { ...(row.asset.metadata ?? {}) };
+    const profileValue = metadata.profile;
+    const profile =
+      profileValue && typeof profileValue === "object"
+        ? { ...(profileValue as Record<string, unknown>) }
+        : {};
+    if (row.previousFee.source === "provider" && row.previousFee.rate !== null) {
+      profile.annualExpenseRatioPct = row.previousFee.rate;
+      if (row.previousFee.updatedAt) {
+        profile.annualExpenseRatioUpdatedAt = row.previousFee.updatedAt;
+      } else {
+        delete profile.annualExpenseRatioUpdatedAt;
+      }
+      if (row.previousFee.providerSource) {
+        profile.annualExpenseRatioSource = row.previousFee.providerSource;
+      } else {
+        delete profile.annualExpenseRatioSource;
+      }
+    } else {
+      delete profile.annualExpenseRatioPct;
+      delete profile.annualExpenseRatioUpdatedAt;
+      delete profile.annualExpenseRatioSource;
+    }
+    if (profileValue || Object.keys(profile).length > 0) {
+      metadata.profile = profile;
+    } else {
+      delete metadata.profile;
+    }
+    delete metadata.annualExpenseRatioPrevious;
+    try {
+      const restoredAsset = await updateAssetProfile({
+        id: row.id,
+        notes: row.asset.notes ?? "",
+        metadata,
+      });
+      cacheUpdatedAsset(restoredAsset);
+    } catch {
+      setMarketFeeRefreshMessage(t("insights:insights.fees.market_fee_refresh_error"));
+    } finally {
+      setRestoringFeeAssetId(null);
+    }
+  };
   const isLoading = holdingsLoading || assetsLoading;
   const filters = (
     <div className="flex justify-end">
@@ -229,11 +384,31 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
             </SelectContent>
           </Select>
         </div>
+        <div className="ml-auto flex flex-col items-end gap-1.5">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={isRefreshingMarketFees || refreshableRows.length === 0}
+            onClick={() => void handleRefreshMarketFees()}
+          >
+            {isRefreshingMarketFees
+              ? t("insights:insights.fees.refreshing_market_fees")
+              : t("insights:insights.fees.refresh_market_fees", {
+                  count: refreshableRows.length,
+                })}
+          </Button>
+          {marketFeeRefreshMessage && (
+            <p className="text-muted-foreground text-right text-xs" aria-live="polite">
+              {marketFeeRefreshMessage}
+            </p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
   const dataQualityNotice =
-    missingFeeRows.length > 0 ? (
+    missingFeeRows.length > 0 || reviewFeeRows.length > 0 || marketFeeChangeRows.length > 0 ? (
       <Card>
         <CardContent className="flex flex-wrap gap-x-6 gap-y-2 p-4 text-sm">
           {missingFeeRows.length > 0 && (
@@ -247,6 +422,52 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
               </span>
             </div>
           )}
+          {reviewFeeRows.length > 0 && (
+            <div className="text-amber-700 dark:text-amber-400">
+              <span className="font-medium">
+                {t("insights:insights.fees.review_data_count", { count: reviewFeeRows.length })}
+              </span>
+              <span className="text-muted-foreground">
+                {" "}
+                · {reviewFeeRows.map((row) => row.name).join(", ")}
+              </span>
+            </div>
+          )}
+          {marketFeeChangeRows.map((row) => (
+            <div
+              key={row.id}
+              className="flex flex-wrap items-center justify-between gap-2 border-b pb-2 last:border-0 last:pb-0"
+            >
+              <div className="min-w-0">
+                <span className="font-medium">{row.name}</span>
+                <span className="text-muted-foreground ml-2 text-xs">
+                  {t("insights:insights.fees.market_fee_change", {
+                    previous:
+                      row.previousFee?.rate === null || !row.previousFee
+                        ? t("insights:insights.fees.market_fee_previous_missing")
+                        : formatting.formatPercent(row.previousFee.rate / 100),
+                    current:
+                      row.feeRate === null
+                        ? t("insights:insights.fees.market_fee_previous_missing")
+                        : row.feeRate === 0
+                          ? t("insights:insights.fees.market_fee_current_hidden")
+                          : formatting.formatPercent(row.feeRate / 100),
+                  })}
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={restoringFeeAssetId !== null}
+                onClick={() => void handleUndoMarketFeeUpdate(row)}
+              >
+                {restoringFeeAssetId === row.id
+                  ? t("insights:insights.fees.undoing_market_fee_update")
+                  : t("insights:insights.fees.undo_market_fee_update")}
+              </Button>
+            </div>
+          ))}
         </CardContent>
       </Card>
     ) : null;
@@ -367,6 +588,53 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 pt-2">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <label htmlFor="fee-scenario-a-reduction" className="font-medium">
+                  {t("insights:insights.fees.scenario_a_reduction")}
+                </label>
+                <span className="text-muted-foreground tabular-nums">
+                  {formatPercentagePoints(scenarioAReductionPp)}
+                </span>
+              </div>
+              <input
+                id="fee-scenario-a-reduction"
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={scenarioAReductionPp}
+                onChange={(event) => setScenarioAReductionPp(Number(event.target.value))}
+                className="lever-slider block w-full"
+                aria-label={t("insights:insights.fees.scenario_a_reduction")}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <label htmlFor="fee-scenario-b-reduction" className="font-medium">
+                  {t("insights:insights.fees.scenario_b_reduction")}
+                </label>
+                <span className="text-muted-foreground tabular-nums">
+                  {formatPercentagePoints(scenarioBReductionPp)}
+                </span>
+              </div>
+              <input
+                id="fee-scenario-b-reduction"
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={scenarioBReductionPp}
+                onChange={(event) => setScenarioBReductionPp(Number(event.target.value))}
+                className="lever-slider block w-full"
+                aria-label={t("insights:insights.fees.scenario_b_reduction")}
+              />
+            </div>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            {t("insights:insights.fees.scenario_reduction_help")}
+          </p>
           <ChartContainer config={projectionChartConfig} className="h-[280px] w-full">
             <AreaChart data={projectionData} margin={{ top: 8, right: 12, left: 8, bottom: 0 }}>
               <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.3} />
@@ -460,18 +728,18 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
               />
               <Area
                 type="monotone"
-                dataKey="minus010"
-                stroke="var(--color-minus010)"
-                fill="var(--color-minus010)"
+                dataKey="scenarioA"
+                stroke="var(--color-scenarioA)"
+                fill="var(--color-scenarioA)"
                 fillOpacity={0.06}
                 strokeWidth={2}
                 activeDot={{ r: 5 }}
               />
               <Area
                 type="monotone"
-                dataKey="minus020"
-                stroke="var(--color-minus020)"
-                fill="var(--color-minus020)"
+                dataKey="scenarioB"
+                stroke="var(--color-scenarioB)"
+                fill="var(--color-scenarioB)"
                 fillOpacity={0.03}
                 strokeWidth={2}
                 activeDot={{ r: 5 }}
@@ -530,6 +798,11 @@ export default function FundFeesPage({ accountFilter }: FundFeesPageProps) {
                         })}
                       </span>
                     )}
+                  {row.needsReview && (
+                    <span className="font-medium text-amber-700 dark:text-amber-400">
+                      {t("insights:insights.fees.needs_review")}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex justify-between text-sm md:justify-end">

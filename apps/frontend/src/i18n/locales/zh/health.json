@@ -137,6 +137,18 @@
       "title_one": "{{count}} 条费用数据已超过 90 天或缺少日期",
       "title_other": "{{count}} 条费用数据已超过 90 天或缺少日期",
       "message": "部分持仓产品的费用数据缺少更新日期，或上次更新已超过 90 天。请检查相关产品的费用信息。"
+    },
+    "fund_fee_missing": {
+      "title_other": "{{count}}只基金缺少年度费用率",
+      "message": "持有的部分 ETF 或共同基金没有记录年度费用率。请检查产品分类，并添加或确认费用率。"
+    },
+    "fund_fee_unusual_rate": {
+      "title_other": "请检查{{count}}只基金的异常费用率",
+      "message": "低于 0% 或高于 5% 的费率会被标记以供检查。较高费用也可能合理，请先核实来源再修改费率。"
+    },
+    "fund_fee_currency_mismatch": {
+      "title_other": "{{count}}只基金的报价货币可能不一致",
+      "message": "基金的报价货币与已知上市市场货币不同。请检查代码、交易市场和货币；以其他货币上市也可能是有意安排。"
     }
   },
   "page": {
