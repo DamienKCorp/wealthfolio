@@ -157,6 +157,11 @@
       "title_other": "Se detectaron {{count}} transferencias incompletas",
       "title_many": "Se detectaron {{count}} transferencias incompletas",
       "message": "Una transferencia no está emparejada o le falta su contrapartida, por lo que su flujo se trató como externo y puede distorsionar las rentabilidades. Emparéjala con la transferencia correspondiente o márcala como externa si eso es lo previsto."
+    },
+    "fund_fee_stale_data": {
+      "title_one": "{{count}} tasa de gastos tiene más de 90 días o no tiene fecha",
+      "title_other": "{{count}} tasas de gastos tienen más de 90 días o no tienen fecha",
+      "message": "Algunos productos de la cartera no tienen fecha de actualización de sus gastos o esta es de hace más de 90 días. Revisa los gastos de los productos afectados."
     }
   },
   "page": {

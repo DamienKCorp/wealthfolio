@@ -48,6 +48,29 @@ fn parse_instrument_type_from_provider(asset_type: &str) -> Option<InstrumentTyp
     }
 }
 
+fn provider_fee_rate_missing_update_date(asset: &Asset) -> bool {
+    let Some(profile) = asset
+        .metadata
+        .as_ref()
+        .and_then(|metadata| metadata.get("profile"))
+    else {
+        return false;
+    };
+    let has_provider_fee = profile
+        .get("annualExpenseRatioPct")
+        .and_then(serde_json::Value::as_f64)
+        .is_some_and(|rate| rate.is_finite() && rate >= 0.0);
+    if !has_provider_fee {
+        return false;
+    }
+
+    profile
+        .get("annualExpenseRatioUpdatedAt")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|updated_at| chrono::DateTime::parse_from_rfc3339(updated_at).ok())
+        .is_none()
+}
+
 fn normalized_lookup_key(value: &str) -> Option<String> {
     let trimmed = value.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_uppercase())
@@ -1247,6 +1270,20 @@ impl AssetService {
                 serde_json::Value::String(url.clone()),
             );
         }
+        if let Some(expense_ratio_pct) = provider_profile.annual_expense_ratio_pct {
+            profile_metadata.insert(
+                "annualExpenseRatioPct".to_string(),
+                serde_json::json!(expense_ratio_pct),
+            );
+            profile_metadata.insert(
+                "annualExpenseRatioSource".to_string(),
+                serde_json::Value::String(provider_profile.data_source.clone()),
+            );
+            profile_metadata.insert(
+                "annualExpenseRatioUpdatedAt".to_string(),
+                serde_json::Value::String(chrono::Utc::now().to_rfc3339()),
+            );
+        }
         if let Some(market_cap) = provider_profile.market_cap {
             profile_metadata.insert("marketCap".to_string(), serde_json::json!(market_cap));
         }
@@ -1264,6 +1301,25 @@ impl AssetService {
         }
         if let Some(week_52_low) = provider_profile.week_52_low {
             profile_metadata.insert("week52Low".to_string(), serde_json::json!(week_52_low));
+        }
+
+        if !profile_metadata.contains_key("annualExpenseRatioPct") {
+            if let Some(previous_profile) = existing_asset
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("profile"))
+                .and_then(serde_json::Value::as_object)
+            {
+                for key in [
+                    "annualExpenseRatioPct",
+                    "annualExpenseRatioSource",
+                    "annualExpenseRatioUpdatedAt",
+                ] {
+                    if let Some(value) = previous_profile.get(key) {
+                        profile_metadata.insert(key.to_string(), value.clone());
+                    }
+                }
+            }
         }
 
         // Merge with existing metadata (preserving any non-profile fields like OptionSpec)
@@ -1903,12 +1959,18 @@ impl AssetServiceTrait for AssetService {
             }
         }
 
-        let asset = self
+        let mut asset = self
             .asset_repository
             .update_profile(asset_id, payload)
             .await?;
 
-        if Self::should_reset_sync_state_after_profile_change(&existing_asset, &asset) {
+        let provider_identity_changed = existing_asset.instrument_symbol != asset.instrument_symbol
+            || existing_asset.instrument_exchange_mic != asset.instrument_exchange_mic
+            || existing_asset.instrument_type != asset.instrument_type
+            || existing_asset.provider_config != asset.provider_config;
+        let sync_state_reset =
+            Self::should_reset_sync_state_after_profile_change(&existing_asset, &asset);
+        if sync_state_reset {
             if let Err(err) = self
                 .quote_service
                 .reset_sync_state_for_profile_change(&asset.id)
@@ -1918,6 +1980,58 @@ impl AssetServiceTrait for AssetService {
                     "Failed to reset quote sync state after asset profile update for {}: {}",
                     asset.id, err
                 );
+            }
+        }
+
+        if provider_identity_changed && asset.quote_mode == QuoteMode::Market {
+            // Do not display fees fetched for the previous ticker while the new
+            // provider profile is being loaded. Manual fee metadata stays intact.
+            let mut metadata = asset
+                .metadata
+                .clone()
+                .unwrap_or_else(|| serde_json::Value::Object(serde_json::Map::new()));
+            let mut removed_provider_fee = false;
+            if let Some(profile) = metadata
+                .as_object_mut()
+                .and_then(|metadata| metadata.get_mut("profile"))
+                .and_then(serde_json::Value::as_object_mut)
+            {
+                for key in [
+                    "annualExpenseRatioPct",
+                    "annualExpenseRatioSource",
+                    "annualExpenseRatioUpdatedAt",
+                ] {
+                    removed_provider_fee |= profile.remove(key).is_some();
+                }
+            }
+            if removed_provider_fee {
+                match self
+                    .asset_repository
+                    .update_metadata(&asset.id, metadata)
+                    .await
+                {
+                    Ok(updated_asset) => asset = updated_asset,
+                    Err(err) => warn!(
+                        "Failed to clear old provider fee metadata for {}: {}",
+                        asset.id, err
+                    ),
+                }
+            }
+
+            match self.enrich_asset_profile_silent(&asset.id).await {
+                Ok(outcome) => {
+                    asset = outcome.asset;
+                    if let Err(err) = self.quote_service.mark_profile_enriched(&asset.id).await {
+                        warn!(
+                            "Failed to mark profile enriched after ticker change for {}: {}",
+                            asset.id, err
+                        );
+                    }
+                }
+                Err(err) => warn!(
+                    "Failed to refresh provider profile after ticker change for {}: {}",
+                    asset.id, err
+                ),
             }
         }
 
@@ -2286,6 +2400,9 @@ impl AssetServiceTrait for AssetService {
     /// Updates the profile JSON (sectors, countries, website) and notes fields.
     async fn enrich_asset_profile(&self, asset_id: &str) -> Result<Asset> {
         let outcome = self.enrich_asset_profile_silent(asset_id).await?;
+        if let Err(err) = self.quote_service.mark_profile_enriched(asset_id).await {
+            warn!("Failed to mark profile enriched for {}: {}", asset_id, err);
+        }
         if outcome.multiplier_changed {
             self.event_sink
                 .emit(DomainEvent::assets_updated(vec![outcome.asset.id.clone()]));
@@ -2317,11 +2434,17 @@ impl AssetServiceTrait for AssetService {
         let ids_to_enrich: Vec<String> = unique_ids
             .into_iter()
             .filter(|asset_id| {
-                let needs = match self.quote_service.get_sync_state(asset_id) {
+                let needs_fee_date = self
+                    .asset_repository
+                    .get_by_id(asset_id)
+                    .map(|asset| provider_fee_rate_missing_update_date(&asset))
+                    .unwrap_or(false);
+                let needs_profile = match self.quote_service.get_sync_state(asset_id) {
                     Ok(Some(state)) => state.needs_profile_enrichment(),
                     Ok(None) => true,
                     Err(_) => true,
                 };
+                let needs = needs_fee_date || needs_profile;
                 if !needs {
                     debug!("Skipping enrichment for {} - already enriched", asset_id);
                 }

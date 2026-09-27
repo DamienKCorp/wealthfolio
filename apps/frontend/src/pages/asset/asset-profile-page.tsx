@@ -838,12 +838,31 @@ export const AssetProfilePage = () => {
           ? totalReturn / fallbackReturnBasis
           : null;
 
+    const manualFeeRate = asset?.metadata?.annualExpenseRatioPct;
+    const profileMetadata = asset?.metadata?.profile;
+    const providerFeeRate =
+      profileMetadata && typeof profileMetadata === "object"
+        ? (profileMetadata as Record<string, unknown>).annualExpenseRatioPct
+        : null;
+    const annualFeeRatePct =
+      typeof providerFeeRate === "number" && Number.isFinite(providerFeeRate) && providerFeeRate >= 0
+        ? providerFeeRate
+        : typeof manualFeeRate === "number" && Number.isFinite(manualFeeRate) && manualFeeRate >= 0
+          ? manualFeeRate
+          : null;
+
     return {
       numShares: quantity,
       marketValue: Number(holding?.marketValue.local ?? 0),
       costBasis: Number(holding?.costBasis?.local ?? 0),
       averagePrice: Number(averageCostPrice),
       portfolioPercent: Number(holding?.weight ?? 0),
+      annualFeeRatePct,
+      annualFeeCost:
+        annualFeeRatePct != null && holding?.marketValue?.base != null
+          ? Number(holding.marketValue.base) * (annualFeeRatePct / 100)
+          : null,
+      annualFeeCurrency: holding?.baseCurrency ?? baseCurrency,
       todaysReturn: todaysReturn != null ? Number(todaysReturn) : null,
       todaysReturnPercent: todaysReturnPercent != null ? Number(todaysReturnPercent) : null,
       unrealizedPnl:

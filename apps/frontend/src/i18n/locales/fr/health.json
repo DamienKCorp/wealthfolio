@@ -157,6 +157,11 @@
       "title_other": "{{count}} transferts incomplets détectés",
       "title_many": "{{count}} transferts incomplets détectés",
       "message": "Un transfert n'est pas apparié ou sa contrepartie est manquante, de sorte que son flux a été traité comme externe et peut fausser les rendements. Appariez-le avec le transfert correspondant, ou marquez-le comme externe si cela est intentionnel."
+    },
+    "fund_fee_stale_data": {
+      "title_one": "{{count}} taux de frais date de plus de 90 jours ou n’a pas de date",
+      "title_other": "{{count}} taux de frais datent de plus de 90 jours ou n’ont pas de date",
+      "message": "Certains produits détenus ont des frais sans date de mise à jour ou mis à jour il y a plus de 90 jours. Vérifiez les frais des produits concernés."
     }
   },
   "page": {

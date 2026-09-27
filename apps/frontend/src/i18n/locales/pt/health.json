@@ -157,6 +157,11 @@
       "title_other": "{{count}} transferências incompletas foram detectadas",
       "title_many": "{{count}} transferências incompletas foram detectadas",
       "message": "Uma transferência não está emparelhada ou está sem a sua contrapartida, portanto seu fluxo foi tratado como externo e pode distorcer os retornos. Emparelhe-a com a transferência correspondente ou marque-a como externa se for o pretendido."
+    },
+    "fund_fee_stale_data": {
+      "title_one": "{{count}} taxa de encargos tem mais de 90 dias ou não tem data",
+      "title_other": "{{count}} taxas de encargos têm mais de 90 dias ou não têm data",
+      "message": "Alguns produtos detidos não têm data de atualização dos encargos ou foram atualizados há mais de 90 dias. Reveja os encargos dos produtos afetados."
     }
   },
   "page": {

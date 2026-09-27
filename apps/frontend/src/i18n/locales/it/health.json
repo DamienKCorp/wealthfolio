@@ -157,6 +157,11 @@
       "title_many": "Rilevati {{count}} trasferimenti incompleti",
       "title_other": "Rilevati {{count}} trasferimenti incompleti",
       "message": "Un trasferimento non è abbinato o manca della sua parte corrispondente, quindi il suo flusso è stato trattato come esterno e potrebbe distorcere i rendimenti. Abbinalo al trasferimento corrispondente, oppure contrassegnalo come esterno se è quello previsto."
+    },
+    "fund_fee_stale_data": {
+      "title_one": "{{count}} dato sui costi ha più di 90 giorni o non ha una data",
+      "title_other": "{{count}} dati sui costi hanno più di 90 giorni o non hanno una data",
+      "message": "Alcuni prodotti in portafoglio non hanno una data di aggiornamento dei costi oppure risale a oltre 90 giorni fa. Controlla i costi dei prodotti interessati."
     }
   },
   "page": {

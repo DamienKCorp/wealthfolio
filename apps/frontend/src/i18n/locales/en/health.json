@@ -132,6 +132,11 @@
       "title_one": "Incomplete transfer detected",
       "title_other": "{{count}} incomplete transfers detected",
       "message": "A transfer is unpaired or missing its matching leg, so its flow was treated as external and may distort returns. Pair it with the matching transfer, or mark it external if that is intended."
+    },
+    "fund_fee_stale_data": {
+      "title_one": "{{count}} fee entry is over 90 days old or missing a date",
+      "title_other": "{{count}} fee entries are over 90 days old or missing a date",
+      "message": "Some held products have fee data with no update date or last updated over 90 days ago. Review the fee details for the affected products."
     }
   },
   "page": {

@@ -41,7 +41,10 @@ use super::checks::{
     ValuationIssueReason,
 };
 use super::errors::HealthError;
-use super::model::{FixAction, HealthConfig, HealthIssue, HealthStatus, IssueDismissal};
+use super::model::{
+    AffectedItem, FixAction, HealthCategory, HealthConfig, HealthIssue, HealthStatus,
+    IssueDismissal, Severity,
+};
 use super::traits::{HealthContext, HealthDismissalStore, HealthServiceTrait};
 
 /// Cache entry for health status.
@@ -76,6 +79,104 @@ fn is_price_staleness_candidate(
     asset_kind: Option<&AssetKind>,
 ) -> bool {
     !matches!(holding_type, HoldingType::Cash) && !matches!(asset_kind, Some(AssetKind::Fx))
+}
+
+fn fee_entry_is_stale(asset: &Asset, now: chrono::DateTime<Utc>) -> Option<(f64, Option<String>)> {
+    let metadata = asset.metadata.as_ref()?;
+    let manual_rate = metadata
+        .get("annualExpenseRatioPct")
+        .and_then(serde_json::Value::as_f64)
+        .filter(|rate| rate.is_finite() && *rate >= 0.0);
+    let profile = metadata.get("profile");
+    let provider_rate = profile
+        .and_then(|value| value.get("annualExpenseRatioPct"))
+        .and_then(serde_json::Value::as_f64)
+        .filter(|rate| rate.is_finite() && *rate >= 0.0);
+
+    let (rate, updated_at) = if let Some(rate) = provider_rate {
+        (
+            rate,
+            profile
+                .and_then(|value| value.get("annualExpenseRatioUpdatedAt"))
+                .and_then(serde_json::Value::as_str),
+        )
+    } else if let Some(rate) = manual_rate {
+        (
+            rate,
+            metadata
+                .get("annualExpenseRatioUpdatedAt")
+                .and_then(serde_json::Value::as_str),
+        )
+    } else {
+        return None;
+    };
+
+    let updated_at = updated_at.map(ToOwned::to_owned);
+    let stale = updated_at
+        .as_deref()
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+        .map(|timestamp| {
+            now.signed_duration_since(timestamp.with_timezone(&Utc)) > Duration::days(90)
+        })
+        .unwrap_or(true);
+
+    stale.then_some((rate, updated_at))
+}
+
+fn stale_fee_health_issue(
+    assets: &[Asset],
+    held_asset_ids: &HashSet<String>,
+    now: chrono::DateTime<Utc>,
+) -> Option<HealthIssue> {
+    let stale_assets: Vec<(&Asset, f64, Option<String>)> = assets
+        .iter()
+        .filter(|asset| held_asset_ids.contains(&asset.id))
+        .filter_map(|asset| {
+            fee_entry_is_stale(asset, now).map(|(rate, updated_at)| (asset, rate, updated_at))
+        })
+        .collect();
+    if stale_assets.is_empty() {
+        return None;
+    }
+
+    let affected_count = stale_assets.len() as u32;
+    let data_hash = stale_assets
+        .iter()
+        .map(|(asset, rate, updated_at)| {
+            format!(
+                "{}:{rate}:{}",
+                asset.id,
+                updated_at.as_deref().unwrap_or("missing")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("|");
+    let affected_items = stale_assets
+        .iter()
+        .map(|(asset, _, _)| {
+            let symbol = asset
+                .display_code
+                .clone()
+                .or_else(|| asset.name.clone())
+                .unwrap_or_else(|| asset.id.clone());
+            AffectedItem::asset_with_name(asset.id.clone(), symbol, asset.name.clone())
+        })
+        .collect();
+
+    Some(
+        HealthIssue::builder()
+            .id("fund_fee_stale_data")
+            .severity(Severity::Warning)
+            .category(HealthCategory::DataConsistency)
+            .title("Fund fee data needs review")
+            .message("Some fee entries are older than 90 days or missing an update date.")
+            .code("fund_fee_stale_data")
+            .param("count", affected_count)
+            .affected_count(affected_count)
+            .affected_items(affected_items)
+            .data_hash(data_hash)
+            .build(),
+    )
 }
 
 impl HealthService {
@@ -609,23 +710,49 @@ impl HealthService {
             effective_timezone,
         ));
 
-        // Run checks with gathered data
-        self.run_checks_with_data(
-            base_currency,
-            total_portfolio_value,
-            &all_holdings,
-            &latest_quote_times,
-            &quote_sync_errors,
-            &fx_pairs,
-            &unclassified_assets,
-            &consistency_issues,
-            &legacy_migration_info,
-            &unconfigured_accounts,
-            configured_timezone,
-            client_timezone,
-            &invalid_transfer_groups,
-        )
-        .await
+        // Run the standard checks first.
+        let mut status = self
+            .run_checks_with_data(
+                base_currency,
+                total_portfolio_value,
+                &all_holdings,
+                &latest_quote_times,
+                &quote_sync_errors,
+                &fx_pairs,
+                &unclassified_assets,
+                &consistency_issues,
+                &legacy_migration_info,
+                &unconfigured_accounts,
+                configured_timezone,
+                client_timezone,
+                &invalid_transfer_groups,
+            )
+            .await?;
+
+        // Fee data freshness is checked for currently held assets only.
+        let held_asset_ids: HashSet<String> = all_holdings
+            .iter()
+            .map(|holding| holding.asset_id.clone())
+            .collect();
+        let assets = asset_service.get_assets().unwrap_or_else(|error| {
+            warn!(
+                "Failed to load assets for fund fee freshness check: {}",
+                error
+            );
+            Vec::new()
+        });
+        if let Some(fee_issue) = stale_fee_health_issue(&assets, &held_asset_ids, Utc::now()) {
+            let mut issues = status.issues;
+            issues.push(fee_issue);
+            let issues = self.filter_dismissed_issues(issues).await?;
+            status = HealthStatus::from_issues(issues);
+            *self.cached_status.write().await = Some(CachedStatus {
+                status: status.clone(),
+                cached_at: Utc::now(),
+            });
+        }
+
+        Ok(status)
     }
 
     /// Filters out issues that have been dismissed (unless their data has changed).
