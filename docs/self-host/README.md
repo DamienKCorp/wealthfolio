@@ -79,14 +79,20 @@ Keep any existing `WF_SECRET_FILE` and legacy `WF_ADDONS_DIR` overrides when
 upgrading.
 
 For Docker, keep the container directory at `/data` and select host storage
-through its volume mapping. The image and supplied Compose files retain
-`WF_DB_PATH=/data/wealthfolio.db`. To select a different container root,
-explicitly update that path as well, or clear it with `WF_DB_PATH=` when opting
-into `WF_DATA_DIR`. Ensure the new container directory has a persistent writable
-mount. The supplied Compose files hardcode `WF_DB_PATH`; setting it in
-`.env.docker` alone does not override it. Use a Compose override file to
-explicitly change storage settings. No new data-directory default is injected
-during upgrades.
+through its volume mapping. The image retains `WF_DB_PATH=/data/wealthfolio.db`.
+The supplied Compose files forward `WF_DATA_DIR` and `WF_DB_PATH` from
+`.env.docker`, preserving that legacy database default and leaving `WF_DATA_DIR`
+empty unless explicitly set. An explicitly empty `WF_DB_PATH=` is honored when
+opting into `WF_DATA_DIR`; the legacy candidate then becomes `<root>/app.db`.
+Keep the existing legacy database filename when first adopting an installation,
+so `/data/wealthfolio.db` is not missed by switching to `/data/app.db`.
+
+To select a different container root, update `WF_DATA_DIR` and point
+`WF_DB_PATH` into it, or clear the database path intentionally. Ensure that root
+has a persistent writable mount. Review any local Compose override that replaces
+these settings; explicit `-f` commands do not automatically include
+`compose.override.yml`. No new data-directory default is injected during
+upgrades.
 
 Use the same path settings, vault override, and master-key source for the server
 and offline `db encrypt`, `db decrypt`, and `db restore` commands. An existing
@@ -213,6 +219,15 @@ Database encryption is **off by default**. When enabled, SQLCipher encrypts the
 database using a key derived from the master key supplied through
 `WF_SECRET_KEY` or `WF_SECRET_KEY_FILE`. Keep that same key when converting or
 restarting.
+
+> **Existing databases must be encrypted before enabling
+> `WF_DB_REQUIRE_ENCRYPTION`.** The variable enforces the database state; it
+> does not convert a plaintext database. If startup reports a mismatch, the
+> database is not damaged. Either unset the variable to remain plaintext, or
+> stop the service, back up the full data directory, run
+> `wealthfolio-server db encrypt` with the same volume, service user, and master
+> key, then restart with the flag set. Releases before 3.9 ignored the variable,
+> so upgraded databases can be plaintext even when it was already configured.
 
 **Changing `WF_DB_REQUIRE_ENCRYPTION` does not convert an existing database.**
 It controls creation of a new database and checks the encryption state at
