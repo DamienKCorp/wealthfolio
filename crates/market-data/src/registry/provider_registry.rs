@@ -29,6 +29,12 @@ use crate::resolver::{check_profile, ResolutionSource, SymbolResolver};
 // Supplementary venue searches must not hold healthy general results for the HTTP timeout.
 const EXCHANGE_SEARCH_TIMEOUT: Duration = Duration::from_secs(2);
 
+// Search budgets are deliberately shorter than quote HTTP timeouts. Reuse the
+// existing breaker under an operation key so search backoff cannot disable prices.
+fn search_circuit_id(provider: &str) -> ProviderId {
+    Cow::Owned(format!("{provider}:search"))
+}
+
 fn is_unverified_fallback(source: ResolutionSource) -> bool {
     source == ResolutionSource::RulesFallback
 }
@@ -860,7 +866,9 @@ impl ProviderRegistry {
         let mut last_error = None;
         for provider in providers {
             let id = Cow::Borrowed(provider.id());
-            if !self.circuit_breaker.is_allowed(&id) {
+            let search_id = search_circuit_id(provider.id());
+            if !self.circuit_breaker.is_allowed(&id) || !self.circuit_breaker.is_allowed(&search_id)
+            {
                 continue;
             }
             // Imports search sequential rows: wait for a token rather than
@@ -872,8 +880,8 @@ impl ProviderRegistry {
             let result = match tokio::time::timeout(EXCHANGE_SEARCH_TIMEOUT, request).await {
                 Ok(result) => result,
                 Err(_) => {
-                    // This UI budget is shorter than the provider HTTP timeout.
-                    // Its expiry says nothing about quote-sync health.
+                    // Back off repeated search delays, without affecting prices.
+                    self.circuit_breaker.record_failure(&search_id);
                     last_error = Some(MarketDataError::Timeout {
                         provider: id.to_string(),
                     });
@@ -882,7 +890,7 @@ impl ProviderRegistry {
             };
             match result {
                 Ok(found) => {
-                    self.circuit_breaker.record_success(&id);
+                    self.circuit_breaker.record_success(&search_id);
                     results.extend(found);
                 }
                 Err(error) => {
@@ -890,7 +898,7 @@ impl ProviderRegistry {
                         error.retry_class(),
                         RetryClass::FailoverWithPenalty | RetryClass::CircuitOpen
                     ) {
-                        self.circuit_breaker.record_failure(&id);
+                        self.circuit_breaker.record_failure(&search_id);
                     }
                     last_error = Some(error);
                 }
@@ -3143,7 +3151,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn slow_scoped_search_budget_does_not_penalize_quote_sync() {
+    async fn slow_scoped_search_backs_off_without_penalizing_quote_sync() {
         let yahoo = Arc::new(SearchProvider::new("YAHOO", 1, false, &["AAPL"]));
         let mut moex = moex_search_provider(&[]);
         moex.delay = EXCHANGE_SEARCH_TIMEOUT * 10;
@@ -3154,6 +3162,13 @@ mod tests {
                 failure_threshold: 1,
                 ..Default::default()
             });
+        registry.rate_limiter.configure(
+            &Cow::Borrowed("YAHOO"),
+            RateLimitConfig {
+                requests_per_minute: 6000,
+                burst_capacity: 2.0,
+            },
+        );
         let results = tokio::time::timeout(
             EXCHANGE_SEARCH_TIMEOUT + Duration::from_secs(1),
             registry.search("AAPL"),
@@ -3164,6 +3179,13 @@ mod tests {
         assert_eq!(symbols(&results), vec!["AAPL"]);
         assert_eq!(moex.searches(), 1);
         assert!(!registry.is_circuit_open(&Cow::Borrowed("MOEX")));
+        assert!(registry.is_circuit_open(&search_circuit_id("MOEX")));
+        let results = tokio::time::timeout(Duration::from_millis(100), registry.search("AAPL"))
+            .await
+            .expect("an open search circuit must return the healthy general result immediately")
+            .unwrap();
+        assert_eq!(symbols(&results), vec!["AAPL"]);
+        assert_eq!(moex.searches(), 1);
     }
 
     #[tokio::test]

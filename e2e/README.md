@@ -143,7 +143,6 @@ npx playwright test && npx playwright show-report
 | `08-holdings-and-performance.spec.ts`  | Holdings and performance views                                                                                              |
 | `09-bulk-holdings.spec.ts`             | Bulk holdings CSV import                                                                                                    |
 | `10-symbol-mapping-validation.spec.ts` | Symbol mapping real-time validation (Yahoo Finance, Börse Frankfurt)                                                        |
-| `45-moex-provider.spec.ts`             | MOEX fixtures, provider icon, symbol guidance in LTR/RTL, and disabling the provider                                        |
 | `13-multi-exchange-import.spec.ts`     | Multi-exchange CSV import: XETRA/LSE/TSX/NASDAQ resolution, region & instrument-type classification (issue #855)            |
 | `16-final-cash-policy.spec.ts`         | Final-cash writer policy through CSV import: persisted amounts + review flags per policy row, fixture-computed ledger total |
 | `20-asset-exchange-edit.spec.ts`       | Asset exchange edits: unchanged keys, duplicate-identity errors, and ISO-only venues                                        |
@@ -170,6 +169,7 @@ npx playwright test && npx playwright show-report
 | `39-text-size.spec.ts`                 | Appearance's text size saves, scales the root font size, and is applied by index.html before the app loads (#1734)          |
 | `37-import-skip-rows.spec.ts`          | CSV import Mapping step: skipping a row with an unmapped symbol lets the other rows import (#2262)                          |
 | `44-performance-date-range.spec.ts`    | ALL calendar inception, mobile Done/Clear persistence and unbounded requests, on desktop/phone in LTR and RTL               |
+| `45-moex-provider.spec.ts`             | MOEX fixtures, provider icon, symbol guidance in LTR/RTL, and disabling the provider                                        |
 
 ---
 

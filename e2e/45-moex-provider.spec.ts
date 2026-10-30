@@ -8,6 +8,23 @@ for (const direction of ["ltr", "rtl"] as const) {
     test.setTimeout(120_000);
     await completeOnboardingIfNeeded(page);
 
+    const settings = await page.request.get(`${BASE_URL}/api/v1/providers/settings`);
+    const moex = (await settings.json()).find((provider: { id: string }) => provider.id === "MOEX");
+    expect(moex.enabled).toBe(false);
+    await gotoAppPath(page, `/settings/market-data?dir=${direction}`);
+    await page.getByRole("button", { name: "Add provider", exact: true }).click();
+    const catalog = page.getByRole("dialog");
+    await expect(catalog.locator('img[src="/market-data/moex.svg"]')).toBeVisible();
+    await catalog.getByRole("button", { name: "Add Moscow Exchange", exact: true }).click();
+    await expect(catalog).not.toBeVisible();
+    await expect
+      .poll(async () => {
+        const response = await page.request.get(`${BASE_URL}/api/v1/providers/settings`);
+        return (await response.json()).find((provider: { id: string }) => provider.id === "MOEX")
+          .enabled;
+      })
+      .toBe(true);
+
     const search = await page.request.get(`${BASE_URL}/api/v1/market-data/search?query=MAIL`);
     expect(search.ok()).toBeTruthy();
     expect(await search.json()).toEqual(
@@ -17,7 +34,7 @@ for (const direction of ["ltr", "rtl"] as const) {
     );
 
     await gotoAppPath(page, `/settings/market-data?dir=${direction}`);
-    const logo = page.locator('img[src="/market-data/moex.svg"]');
+    const logo = page.locator('img[src="/market-data/moex.svg"]').filter({ visible: true });
     await expect(logo).toBeVisible();
     await expect
       .poll(() => logo.evaluate((element: HTMLImageElement) => element.naturalWidth))
@@ -78,6 +95,13 @@ for (const direction of ["ltr", "rtl"] as const) {
     });
     await page.keyboard.press("Escape");
     expect((await page.request.delete(`${BASE_URL}/api/v1/assets/${asset.id}`)).ok()).toBeTruthy();
+    expect(
+      (
+        await page.request.put(`${BASE_URL}/api/v1/providers/settings`, {
+          data: { providerId: "MOEX", priority: moex.priority, enabled: false },
+        })
+      ).ok(),
+    ).toBeTruthy();
   });
 }
 
