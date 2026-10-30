@@ -226,9 +226,10 @@ fn moscow_datetime_utc(text: &str) -> Option<DateTime<Utc>> {
         .map(|dt| dt.with_timezone(&Utc))
 }
 
-/// Main boards of the shares market whose history overlaps `[from, till]`.
-fn history_boards(boards: &IssTable, from: NaiveDate, till: NaiveDate) -> Vec<String> {
-    let mut selected: Vec<(usize, String)> = boards
+/// Rows of the `boards` table that are main boards of the shares market,
+/// with their rank.
+fn main_share_boards<'a>(boards: &'a IssTable) -> impl Iterator<Item = (usize, IssRow<'a>)> {
+    boards
         .rows()
         .filter(|row| {
             row.text("engine")
@@ -237,9 +238,14 @@ fn history_boards(boards: &IssTable, from: NaiveDate, till: NaiveDate) -> Vec<St
                     .text("market")
                     .is_none_or(|market| market.eq_ignore_ascii_case("shares"))
         })
-        .filter_map(|row| {
+        .filter_map(|row| Some((main_board_rank(row.text("boardid")?)?, row)))
+}
+
+/// Main boards of the shares market whose history overlaps `[from, till]`.
+fn history_boards(boards: &IssTable, from: NaiveDate, till: NaiveDate) -> Vec<String> {
+    let mut selected: Vec<(usize, String)> = main_share_boards(boards)
+        .filter_map(|(rank, row)| {
             let board = row.text("boardid")?;
-            let rank = main_board_rank(board)?;
             // Missing bounds mean ISS has no history there yet: skip.
             let history_from = row.date("history_from")?;
             let history_till = row.date("history_till")?;
@@ -510,15 +516,18 @@ impl MoexProvider {
         self.request_limiter.acquire(&provider_id).await;
         let url = format!("{}/{}", BASE_URL, path_and_query);
         debug!("MOEX GET {}", url);
-        let response =
-            self.client
-                .get(&url)
-                .send()
-                .await
-                .map_err(|e| MarketDataError::ProviderError {
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            if e.is_timeout() {
+                MarketDataError::Timeout {
+                    provider: PROVIDER_ID.to_string(),
+                }
+            } else {
+                MarketDataError::ProviderError {
                     provider: PROVIDER_ID.to_string(),
                     message: format!("HTTP request failed: {}", e),
-                })?;
+                }
+            }
+        })?;
         if !response.status().is_success() {
             return Err(MarketDataError::ProviderError {
                 provider: PROVIDER_ID.to_string(),
@@ -609,16 +618,16 @@ impl MarketDataProvider for MoexProvider {
             ))
             .await?;
         let empty = IssTable::default();
-        let boards = history_boards(
-            table(&boards_response, "boards").unwrap_or(&empty),
-            from,
-            till,
-        );
+        let board_table = table(&boards_response, "boards").unwrap_or(&empty);
+        let boards = history_boards(board_table, from, till);
         if boards.is_empty() {
-            return Err(MarketDataError::SymbolNotFound(format!(
-                "{}@{}",
-                secid, MIC
-            )));
+            // A listed share without history in the range (e.g. today's bar
+            // before ISS publishes it) is not a missing symbol.
+            return Err(if main_share_boards(board_table).next().is_some() {
+                MarketDataError::NoDataForRange
+            } else {
+                MarketDataError::SymbolNotFound(format!("{}@{}", secid, MIC))
+            });
         }
 
         let hint = currency_hint(context);
@@ -844,6 +853,30 @@ mod tests {
             vec!["TQTF".to_string()]
         );
         assert!(history_boards(boards, date("2010-01-01"), date("2010-12-31")).is_empty());
+    }
+
+    #[test]
+    fn history_boards_tell_listed_share_without_range_history() {
+        let response = parse(
+            r#"{"boards": {
+                "columns": ["boardid","market","engine","history_from","history_till"],
+                "data": [
+                    ["TQBR","shares","stock","2013-03-25","2026-10-29"],
+                    ["SMAL","shares","stock","2008-05-22","2026-10-29"]
+                ]}}"#,
+        );
+        let boards = &response["boards"];
+        let date = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        // Today's bar is not in ISS history yet: no boards, but still listed.
+        assert!(history_boards(boards, date("2026-10-30"), date("2026-10-30")).is_empty());
+        assert!(main_share_boards(boards).next().is_some());
+
+        let response = parse(
+            r#"{"boards": {
+                "columns": ["boardid","market","engine","history_from","history_till"],
+                "data": [["SMAL","shares","stock","2008-05-22","2026-10-29"]]}}"#,
+        );
+        assert!(main_share_boards(&response["boards"]).next().is_none());
     }
 
     #[test]
