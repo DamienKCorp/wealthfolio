@@ -818,7 +818,6 @@
     "import_quotes_count_other": "{{count}}件の価格をインポート",
     "imported_count_other": "{{count}}件インポート",
     "failed_count_other": "{{count}}件失敗",
-    "feature_splits": "株式分割",
     "feature_dividends": "配当",
     "providerDescriptions": {
       "MOEX": "Moscow Exchange ISS は、MOEX で取引される株式、預託証券、ETF の遅延価格と終値を提供します。API キーは不要です。",

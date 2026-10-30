@@ -818,7 +818,6 @@
     "import_quotes_count_other": "导入 {{count}} 条报价",
     "imported_count_other": "已导入 {{count}} 条",
     "failed_count_other": "失败 {{count}} 条",
-    "feature_splits": "股票拆分",
     "feature_dividends": "股息",
     "coverageLabels": {
       "User-defined": "用户自定义",

@@ -111,7 +111,6 @@ impl ProviderCapabilities {
                     "Historical".to_string(),
                     "Search".to_string(),
                     "Profiles".to_string(),
-                    "Splits".to_string(),
                 ],
             }),
             "OPENFIGI" => Some(Self {

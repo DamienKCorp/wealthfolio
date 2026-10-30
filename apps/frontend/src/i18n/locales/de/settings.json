@@ -797,7 +797,6 @@
     "imported_count_other": "{{count}} importiert",
     "failed_count_one": "{{count}} fehlgeschlagen",
     "failed_count_other": "{{count}} fehlgeschlagen",
-    "feature_splits": "Aktiensplits",
     "feature_dividends": "Dividenden",
     "providerDescriptions": {
       "US_TREASURY_CALC": "Berechnet die Kurse von US-Staatsanleihen anhand der vom US-Finanzministerium veröffentlichten Zinskurvendaten.",

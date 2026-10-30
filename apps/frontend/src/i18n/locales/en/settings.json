@@ -808,7 +808,6 @@
       "US Treasury": "US Treasury",
       "User-defined": "User-defined"
     },
-    "feature_splits": "Splits",
     "feature_dividends": "Dividends",
     "feature_no_api_key": "No API key",
     "us_treasury_name": "US Treasury (Calculated)",

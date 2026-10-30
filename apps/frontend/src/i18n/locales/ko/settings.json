@@ -818,7 +818,6 @@
     "import_quotes_count_other": "시세 {{count}}건 가져오기",
     "imported_count_other": "{{count}}건 가져옴",
     "failed_count_other": "{{count}}건 실패",
-    "feature_splits": "주식 분할",
     "feature_dividends": "배당금",
     "providerDescriptions": {
       "MOEX": "Moscow Exchange ISS는 MOEX에서 거래되는 주식, 주식예탁증서 및 ETF의 지연 시세와 종가를 제공합니다. API 키가 필요하지 않습니다.",

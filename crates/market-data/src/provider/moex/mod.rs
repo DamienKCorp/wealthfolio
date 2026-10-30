@@ -13,8 +13,10 @@
 //! counterparty (`EQCC`) and settlement (`SPEQ`) boards are ignored.
 //!
 //! Search retains exact inactive SECID/ISIN matches so historical imports can
-//! resolve delisted listings. Split/consolidation ratios come from the public
-//! `statistics/engines/stock/splits/{SECID}` feed (after / before).
+//! resolve delisted listings. Provider-level split/consolidation lookup uses the
+//! public `statistics/engines/stock/splits/{SECID}` feed (after / before).
+//! Automatic split-to-activity synchronization is disabled in the app for all
+//! providers; users must record split activities themselves.
 //! Profiles include listing currency and optional market capitalization. ISS
 //! does not supply issuer domicile, sector or industry in these responses;
 //! those fields remain unknown rather than being inferred from the venue.

@@ -830,7 +830,6 @@
     "import_quotes_count_one": "匯入 {{count}} 筆報價",
     "imported_count_one": "已匯入 {{count}} 筆",
     "failed_count_one": "{{count}} 筆失敗",
-    "feature_splits": "股票分割",
     "feature_dividends": "股利",
     "providerDescriptions": {
       "US_TREASURY_CALC": "根據美國財政部公佈的殖利率曲線計算美國國債價格。",

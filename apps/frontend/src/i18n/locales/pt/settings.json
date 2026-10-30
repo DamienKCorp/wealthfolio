@@ -856,7 +856,6 @@
     "failed_count_one": "{{count}} falha",
     "failed_count_other": "{{count}} falhas",
     "failed_count_many": "{{count}} falhas",
-    "feature_splits": "Desdobramentos",
     "feature_dividends": "Dividendos",
     "providerDescriptions": {
       "MOEX": "O Moscow Exchange ISS fornece cotações com atraso e de fechamento para ações, certificados de depósito e ETFs negociados na MOEX. Não é necessária uma chave de API.",

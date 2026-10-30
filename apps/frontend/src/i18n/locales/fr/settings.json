@@ -858,7 +858,6 @@
     "failed_count_one": "{{count}} échouée",
     "failed_count_other": "{{count}} échouées",
     "failed_count_many": "{{count}} échouées",
-    "feature_splits": "Fractionnements",
     "feature_dividends": "Dividendes",
     "providerDescriptions": {
       "MOEX": "Moscow Exchange ISS fournit des cours différés et de fin de journée pour les actions, les certificats de dépôt et les ETF négociés sur MOEX. Aucune clé API requise.",

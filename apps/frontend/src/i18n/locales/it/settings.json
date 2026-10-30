@@ -856,7 +856,6 @@
     "failed_count_one": "{{count}} non riuscita",
     "failed_count_many": "{{count}} non riuscite",
     "failed_count_other": "{{count}} non riuscite",
-    "feature_splits": "Frazionamenti",
     "feature_dividends": "Dividendi",
     "providerDescriptions": {
       "MOEX": "Moscow Exchange ISS fornisce prezzi ritardati e di fine giornata per azioni, certificati di deposito ed ETF negoziati su MOEX. Non è richiesta una chiave API.",
