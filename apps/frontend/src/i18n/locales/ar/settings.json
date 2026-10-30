@@ -1234,8 +1234,10 @@
     "validation_url_format": "يجب أن يبدأ عنوان URL بـ http:// أو https://",
     "validation_url_required": "عنوان URL مطلوب",
     "website": "الموقع الإلكتروني",
+    "feature_splits": "تجزئة الأسهم",
     "feature_dividends": "توزيعات الأرباح",
     "providerDescriptions": {
+      "MOEX": "توفر Moscow Exchange ISS أسعارًا متأخرة وأسعار نهاية اليوم للأسهم وإيصالات الإيداع وصناديق المؤشرات المتداولة في MOEX. لا يلزم مفتاح API.",
       "YAHOO": "Yahoo Finance هي شركة رائدة في توفير البيانات المالية للعديد من الأسواق. ويوفر بيانات المخزون التاريخية وفي الوقت الحقيقي.",
       "MARKETDATA_APP": "يوفر تطبيق MarketData.app بيانات تاريخية وفي الوقت الفعلي للأسهم الأمريكية والخيارات وصناديق الاستثمار المتداولة وصناديق الاستثمار المشتركة والمزيد.",
       "ALPHA_VANTAGE": "توفر Alpha Vantage واجهات برمجة التطبيقات (APIs) المجانية للبيانات التاريخية واللحظية المتعلقة بالأسهم والعملات الأجنبية والعملات المشفرة.",
@@ -1270,6 +1272,7 @@
       "canadian_stock_fund_history_tsx_symbol_or_fundserv_code": "سجل الأسهم والصناديق الكندية (رمز التداول في TSX أو رمز Fundserv)"
     },
     "instrumentLabels": {
+      "depositary_receipts": "إيصالات الإيداع",
       "stocks": "الأسهم",
       "crypto": "العملات الرقمية",
       "etfs": "صناديق ETF",

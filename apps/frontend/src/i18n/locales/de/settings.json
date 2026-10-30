@@ -797,6 +797,7 @@
     "imported_count_other": "{{count}} importiert",
     "failed_count_one": "{{count}} fehlgeschlagen",
     "failed_count_other": "{{count}} fehlgeschlagen",
+    "feature_splits": "Aktiensplits",
     "feature_dividends": "Dividenden",
     "providerDescriptions": {
       "US_TREASURY_CALC": "Berechnet die Kurse von US-Staatsanleihen anhand der vom US-Finanzministerium veröffentlichten Zinskurvendaten.",
@@ -804,6 +805,7 @@
       "OPENFIGI": "OpenFIGI bietet einen Mapping-Service für Finanzinstrument-Identifikatoren (FIGI, ISIN, CUSIP, Ticker).",
       "METAL_PRICE_API": "Bietet Echtzeit- und historische Spotpreise für Edelmetalle (Gold, Silber, Platin, Palladium).",
       "CUSTOM_SCRAPER": "Laufzeit-Dispatch-Provider für benutzerdefinierte benutzerdefinierte Quellen",
+      "MOEX": "Moscow Exchange ISS liefert verzögerte Kurse und Schlusskurse für Aktien, Hinterlegungsscheine und ETFs, die an der MOEX gehandelt werden. Kein API-Schlüssel erforderlich.",
       "YAHOO": "Yahoo Finance ist ein führender Finanzdatenanbieter für viele Märkte. Es liefert historische und Echtzeit-Bestandsdaten.",
       "MARKETDATA_APP": "MarketData.app bietet Echtzeit- und historische Daten für US-Aktien, Optionen, ETFs, Investmentfonds und mehr.",
       "ALPHA_VANTAGE": "Alpha Vantage bietet kostenlose APIs für Echtzeit- und historische Daten zu Aktien, Devisen und Kryptowährungen.",
@@ -833,6 +835,7 @@
       "canadian_stock_fund_history_tsx_symbol_or_fundserv_code": "Historie kanadischer Aktien und Fonds (TSX-Symbol oder Fundserv-Code)"
     },
     "instrumentLabels": {
+      "depositary_receipts": "Hinterlegungsscheine",
       "stocks": "Aktien",
       "crypto": "Krypto",
       "etfs": "ETFs",

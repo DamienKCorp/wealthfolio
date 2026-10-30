@@ -6206,4 +6206,31 @@ mod tests {
             ..Default::default()
         }
     }
+    #[tokio::test]
+    async fn test_delisted_moex_import_avoids_foreign_ticker_collision() {
+        let foreign = yahoo_search_result(
+            "600107.SS",
+            "600107",
+            "XSHG",
+            "Mailyard",
+            "CNY",
+            "600107.SS",
+        );
+        let mut moex = yahoo_search_result("MAIL", "MAIL", "MISX", "VK GDR", "RUB", "MAIL");
+        moex.provider_id = Some("MOEX".to_string());
+        moex.data_source = Some("MOEX".to_string());
+        let service = test_asset_service(
+            Vec::new(),
+            TestQuoteService::default().with_result("MAIL", vec![foreign, moex]),
+        );
+        let output = service
+            .resolve_import_asset_inputs(vec![import_input("MAIL", "RUB")])
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(output.canonical_symbol.as_deref(), Some("MAIL"));
+        assert_eq!(output.exchange_mic.as_deref(), Some("MISX"));
+        assert_eq!(output.provider_id.as_deref(), Some("MOEX"));
+    }
 }

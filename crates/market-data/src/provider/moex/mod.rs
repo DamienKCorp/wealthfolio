@@ -11,11 +11,21 @@
 //! per trading board. Only the regular order-book boards carry the price a
 //! holder cares about; odd-lot (`SMAL`), block-trade (`EQDP`), central
 //! counterparty (`EQCC`) and settlement (`SPEQ`) boards are ignored.
+//!
+//! Search retains exact inactive SECID/ISIN matches so historical imports can
+//! resolve delisted listings. Split/consolidation ratios come from the public
+//! `statistics/engines/stock/splits/{SECID}` feed (after / before).
+//! Profiles include listing currency and optional market capitalization. ISS
+//! does not supply issuer domicile, sector or industry in these responses;
+//! those fields remain unknown rather than being inferred from the venue.
+//! Dividends remain unsupported: the legacy security URL returns security
+//! metadata, while the documented CCI dividend feed requires separate access.
 
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use log::debug;
 use reqwest::Client;
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::Value;
@@ -28,7 +38,7 @@ use urlencoding::encode;
 use crate::errors::MarketDataError;
 use crate::models::{
     AssetProfile, Coverage, InstrumentKind, ProviderId, ProviderInstrument, Quote, QuoteContext,
-    SearchResult,
+    SearchResult, SplitEvent,
 };
 use crate::provider::{MarketDataProvider, ProviderCapabilities, RateLimit};
 use crate::registry::{RateLimitConfig, RateLimiter};
@@ -97,7 +107,27 @@ struct IssTable {
     #[serde(default)]
     columns: Vec<String>,
     #[serde(default)]
-    data: Vec<Vec<Value>>,
+    data: Vec<Vec<IssCell>>,
+}
+
+// Keep number literals local to this provider. serde_json's global
+// arbitrary_precision feature changes legacy Decimal deserialization elsewhere.
+#[derive(Debug)]
+struct IssCell {
+    value: Value,
+    number_literal: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for IssCell {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = Box::<serde_json::value::RawValue>::deserialize(deserializer)?;
+        let value: Value = serde_json::from_str(raw.get()).map_err(serde::de::Error::custom)?;
+        let number_literal = value.is_number().then(|| raw.get().to_string());
+        Ok(Self {
+            value,
+            number_literal,
+        })
+    }
 }
 
 type IssResponse = HashMap<String, IssTable>;
@@ -119,13 +149,16 @@ impl IssTable {
 
 struct IssRow<'a> {
     table: &'a IssTable,
-    values: &'a [Value],
+    values: &'a [IssCell],
 }
 
 impl<'a> IssRow<'a> {
     fn value(&self, column: &str) -> Option<&'a Value> {
         let index = self.table.column(column)?;
-        self.values.get(index).filter(|value| !value.is_null())
+        self.values
+            .get(index)
+            .map(|cell| &cell.value)
+            .filter(|value| !value.is_null())
     }
 
     fn text(&self, column: &str) -> Option<&'a str> {
@@ -138,10 +171,11 @@ impl<'a> IssRow<'a> {
     fn decimal(&self, column: &str) -> Option<Decimal> {
         match self.value(column)? {
             // Parse the JSON literal, not an f64, so 0.7941 stays 0.7941.
-            Value::Number(number) => {
-                let literal = number.to_string();
-                Decimal::from_str(&literal)
-                    .or_else(|_| Decimal::from_scientific(&literal))
+            Value::Number(_) => {
+                let index = self.table.column(column)?;
+                let literal = self.values.get(index)?.number_literal.as_deref()?;
+                Decimal::from_str(literal)
+                    .or_else(|_| Decimal::from_scientific(literal))
                     .ok()
             }
             Value::String(text) => Decimal::from_str(text.trim()).ok(),
@@ -395,10 +429,18 @@ fn asset_type_for(iss_type: &str) -> &'static str {
     }
 }
 
-fn search_results_from_table(securities: &IssTable) -> Vec<SearchResult> {
+fn search_results_from_table(securities: &IssTable, query: &str) -> Vec<SearchResult> {
     securities
         .rows()
-        .filter(|row| row.int("is_traded") == Some(1))
+        .filter(|row| {
+            row.int("is_traded") == Some(1)
+                || row
+                    .text("secid")
+                    .is_some_and(|secid| secid.eq_ignore_ascii_case(query.trim()))
+                || row
+                    .text("isin")
+                    .is_some_and(|isin| isin.eq_ignore_ascii_case(query.trim()))
+        })
         .filter_map(|row| {
             let board = row.text("primary_boardid")?;
             let currency = main_board_currency(board)?;
@@ -417,6 +459,40 @@ fn search_results_from_table(securities: &IssTable) -> Vec<SearchResult> {
             )
         })
         .collect()
+}
+
+fn split_events(
+    splits: &IssTable,
+    secid: &str,
+    from: NaiveDate,
+    till: NaiveDate,
+) -> Vec<SplitEvent> {
+    let mut events = BTreeMap::new();
+    for row in splits.rows() {
+        if !row
+            .text("secid")
+            .is_some_and(|symbol| symbol.eq_ignore_ascii_case(secid))
+        {
+            continue;
+        }
+        let (Some(date), Some(before), Some(after)) = (
+            row.date("tradedate"),
+            row.decimal("before"),
+            row.decimal("after"),
+        ) else {
+            continue;
+        };
+        if date < from || date > till || before <= Decimal::ZERO || after <= Decimal::ZERO {
+            continue;
+        }
+        if let Some(ratio) = after
+            .checked_div(before)
+            .filter(|ratio| *ratio > Decimal::ZERO)
+        {
+            events.insert(date, SplitEvent { date, ratio });
+        }
+    }
+    events.into_values().collect()
 }
 
 fn profile_from_description(description: &IssTable) -> Option<AssetProfile> {
@@ -528,19 +604,29 @@ impl MoexProvider {
                 }
             }
         })?;
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(MarketDataError::RateLimited {
+                provider: PROVIDER_ID.to_string(),
+            });
+        }
         if !response.status().is_success() {
             return Err(MarketDataError::ProviderError {
                 provider: PROVIDER_ID.to_string(),
                 message: format!("HTTP {}", response.status()),
             });
         }
-        response
-            .json::<IssResponse>()
-            .await
-            .map_err(|e| MarketDataError::ProviderError {
-                provider: PROVIDER_ID.to_string(),
-                message: format!("JSON parse error: {}", e),
-            })
+        response.json::<IssResponse>().await.map_err(|error| {
+            if error.is_timeout() {
+                MarketDataError::Timeout {
+                    provider: PROVIDER_ID.to_string(),
+                }
+            } else {
+                MarketDataError::ProviderError {
+                    provider: PROVIDER_ID.to_string(),
+                    message: format!("JSON parse error: {}", error),
+                }
+            }
+        })
     }
 }
 
@@ -673,7 +759,26 @@ impl MarketDataProvider for MoexProvider {
             ))
             .await?;
         Ok(table(&response, "securities")
-            .map(search_results_from_table)
+            .map(|securities| search_results_from_table(securities, query))
+            .unwrap_or_default())
+    }
+
+    async fn get_splits(
+        &self,
+        _context: &QuoteContext,
+        instrument: ProviderInstrument,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<SplitEvent>, MarketDataError> {
+        let secid = secid_from_instrument(&instrument)?;
+        let response = self
+            .get_json(&format!(
+                "statistics/engines/stock/splits/{}.json?iss.meta=off&iss.only=splits",
+                encode(&secid)
+            ))
+            .await?;
+        Ok(table(&response, "splits")
+            .map(|splits| split_events(splits, &secid, start.date_naive(), end.date_naive()))
             .unwrap_or_default())
     }
 
@@ -686,17 +791,39 @@ impl MarketDataProvider for MoexProvider {
         let secid = normalize_secid(bare)?;
         let response = self
             .get_json(&format!(
-                "securities/{}.json?iss.meta=off&iss.only=description\
-                 &description.columns=name,value",
+                "securities/{}.json?iss.meta=off&iss.only=description,boards\
+                 &description.columns=name,value&boards.columns=boardid,market,engine,is_primary,currencyid",
                 encode(&secid)
             ))
             .await?;
-        table(&response, "description")
+        let mut profile = table(&response, "description")
             .and_then(profile_from_description)
-            .ok_or(MarketDataError::SymbolNotFound(format!(
-                "{}@{}",
-                secid, MIC
-            )))
+            .ok_or_else(|| MarketDataError::SymbolNotFound(format!("{}@{}", secid, MIC)))?;
+        if let Some(boards) = table(&response, "boards") {
+            profile.currency = main_share_boards(boards)
+                .min_by_key(|(rank, row)| (row.int("is_primary") != Some(1), *rank))
+                .map(|(_, row)| iss_currency(row.text("currencyid")));
+        }
+        let market = self.get_json(&format!(
+            "engines/stock/markets/shares/securities/{}.json?iss.meta=off&iss.only=marketdata&marketdata.columns=BOARDID,ISSUECAPITALIZATION",
+            encode(&secid)
+        )).await;
+        // Optional enrichment must not discard the security's identity on failure.
+        if let Ok(market) = market {
+            profile.market_cap = table(&market, "marketdata").and_then(|rows| {
+                rows.rows()
+                    .filter_map(|row| {
+                        Some((
+                            main_board_rank(row.board()?)?,
+                            row.decimal("ISSUECAPITALIZATION")?,
+                        ))
+                    })
+                    .filter(|(_, value)| *value > Decimal::ZERO)
+                    .min_by_key(|(rank, _)| *rank)
+                    .and_then(|(_, value)| value.to_f64())
+            });
+        }
+        Ok(profile)
     }
 }
 
@@ -1001,7 +1128,7 @@ mod tests {
                     ["TMOS","TMOS ETF","БПИФ Т-Капитал Индекс МосБиржи","RU000A101X76",1,"exchange_ppif","TQBR"]
                 ]}}"#,
         );
-        let results = search_results_from_table(&response["securities"]);
+        let results = search_results_from_table(&response["securities"], "AFLT");
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].symbol, "AFLT");
         assert_eq!(results[0].exchange_mic.as_deref(), Some("MISX"));
@@ -1050,5 +1177,60 @@ mod tests {
         let response = parse(r#"{"t": {"columns": ["P"], "data": [[0.7941]]}}"#);
         let row = response["t"].rows().next().unwrap();
         assert_eq!(row.decimal("P"), Some(Decimal::from_str("0.7941").unwrap()));
+    }
+    #[test]
+    fn search_retains_exact_delisted_symbols_and_isins_without_fuzzy_inactive_results() {
+        let response = parse(
+            r#"{"securities": {
+            "columns": ["secid","name","isin","is_traded","type","primary_boardid"],
+            "data": [
+                ["MAIL","VK GDR","US5603172082",0,"depositary_receipt","TQBR"],
+                ["RU000A0JRSC7","Mail fund","RU000A0JRSC7",0,"public_ppif","TQIF"]
+            ]}}"#,
+        );
+        for query in ["mail", "US5603172082"] {
+            let results = search_results_from_table(&response["securities"], query);
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].symbol, "MAIL");
+            assert_eq!(results[0].exchange_mic.as_deref(), Some("MISX"));
+            assert_eq!(results[0].data_source.as_deref(), Some("MOEX"));
+        }
+        assert!(search_results_from_table(&response["securities"], "Mail fund").is_empty());
+    }
+
+    #[test]
+    fn splits_use_after_over_before_and_filter_range_symbol_and_invalid_ratios() {
+        let response = parse(
+            r#"{"splits": {
+            "columns": ["tradedate","secid","before","after"],
+            "data": [
+                ["2024-07-15","VTBR",5000,1],
+                ["2024-07-15","VTBR",5000,1],
+                ["2024-07-16","OTHER",1,100],
+                ["2024-07-17","VTBR",0,1],
+                ["2024-07-18","VTBR",1,-1],
+                ["2024-07-19","VTBR",1,10],
+                ["2024-07-20","VTBR",1,100]
+            ]}}"#,
+        );
+        let events = split_events(
+            &response["splits"],
+            "VTBR",
+            NaiveDate::from_ymd_opt(2024, 7, 15).unwrap(),
+            NaiveDate::from_ymd_opt(2024, 7, 19).unwrap(),
+        );
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].ratio, Decimal::new(2, 4));
+        assert_eq!(events[1].ratio, Decimal::TEN);
+    }
+
+    #[test]
+    fn decimals_preserve_precision_beyond_f64() {
+        let response =
+            parse(r#"{"t":{"columns":["P"],"data":[[0.1000000000000000000000000001]]}}"#);
+        assert_eq!(
+            response["t"].rows().next().unwrap().decimal("P"),
+            Some(Decimal::from_str("0.1000000000000000000000000001").unwrap())
+        );
     }
 }

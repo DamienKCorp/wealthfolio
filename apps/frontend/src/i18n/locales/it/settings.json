@@ -856,8 +856,10 @@
     "failed_count_one": "{{count}} non riuscita",
     "failed_count_many": "{{count}} non riuscite",
     "failed_count_other": "{{count}} non riuscite",
+    "feature_splits": "Frazionamenti",
     "feature_dividends": "Dividendi",
     "providerDescriptions": {
+      "MOEX": "Moscow Exchange ISS fornisce prezzi ritardati e di fine giornata per azioni, certificati di deposito ed ETF negoziati su MOEX. Non è richiesta una chiave API.",
       "YAHOO": "Yahoo Finance è un fornitore leader di dati finanziari per molti mercati. Fornisce dati azionari storici e in tempo reale.",
       "MARKETDATA_APP": "MarketData.app fornisce dati storici e in tempo reale per azioni, opzioni, ETF, fondi comuni di investimento statunitensi e altro ancora.",
       "ALPHA_VANTAGE": "Alpha Vantage fornisce API gratuite per dati storici e in tempo reale su azioni, forex e criptovalute.",
@@ -892,6 +894,7 @@
       "canadian_stock_fund_history_tsx_symbol_or_fundserv_code": "Storico di azioni e fondi canadesi (simbolo TSX o codice Fundserv)"
     },
     "instrumentLabels": {
+      "depositary_receipts": "Certificati di deposito",
       "stocks": "Azioni",
       "crypto": "Cripto",
       "etfs": "ETF",

@@ -790,6 +790,7 @@
     "failed_count_one": "{{count}} failed",
     "failed_count_other": "{{count}} failed",
     "providerDescriptions": {
+      "MOEX": "Moscow Exchange ISS provides delayed and end-of-day prices for shares, depositary receipts and ETFs traded on MOEX. No API key required.",
       "YAHOO": "Yahoo Finance is a leading financial data provider for many markets. It provides historical and real-time stock data.",
       "MARKETDATA_APP": "MarketData.app provides real-time and historical data for U.S. stocks, options, ETFs, mutual funds, and more.",
       "ALPHA_VANTAGE": "Alpha Vantage provides free APIs for real-time and historical data on stocks, forex, and cryptocurrencies.",
@@ -807,6 +808,7 @@
       "US Treasury": "US Treasury",
       "User-defined": "User-defined"
     },
+    "feature_splits": "Splits",
     "feature_dividends": "Dividends",
     "feature_no_api_key": "No API key",
     "us_treasury_name": "US Treasury (Calculated)",
@@ -825,6 +827,7 @@
       "canadian_stock_fund_history_tsx_symbol_or_fundserv_code": "Canadian stock & fund history (TSX symbol or Fundserv code)"
     },
     "instrumentLabels": {
+      "depositary_receipts": "Depositary receipts",
       "stocks": "Stocks",
       "crypto": "Crypto",
       "etfs": "ETFs",

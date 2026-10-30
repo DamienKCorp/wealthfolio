@@ -234,6 +234,8 @@
     }
   },
   "editSheet": {
+    "moex_symbol_placeholder": "例如 SBER、AFLT",
+    "moex_symbol_hint": "请使用不带前缀或后缀的 MOEX 证券代码，并将交易所设为 Moscow Exchange (MISX)。",
     "identity_conflict": "已存在具有相同标识的资产。更改未保存。请使用现有资产或选择其他交易所。",
     "general": "通用",
     "classification": "分类",

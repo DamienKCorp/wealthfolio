@@ -818,8 +818,10 @@
     "import_quotes_count_other": "{{count}}件の価格をインポート",
     "imported_count_other": "{{count}}件インポート",
     "failed_count_other": "{{count}}件失敗",
+    "feature_splits": "株式分割",
     "feature_dividends": "配当",
     "providerDescriptions": {
+      "MOEX": "Moscow Exchange ISS は、MOEX で取引される株式、預託証券、ETF の遅延価格と終値を提供します。API キーは不要です。",
       "YAHOO": "Yahoo Finance は、多くの市場を対象とする大手金融データ プロバイダーです。過去およびリアルタイムの株式データを提供します。",
       "MARKETDATA_APP": "MarketData.app は、米国株、オプション、ETF、投資信託などのリアルタイム データと履歴データを提供します。",
       "ALPHA_VANTAGE": "Alpha Vantage は、株式、外国為替、暗号通貨に関するリアルタイムおよび履歴データ用の無料 API を提供します。",
@@ -854,6 +856,7 @@
       "canadian_stock_fund_history_tsx_symbol_or_fundserv_code": "カナダの株式・ファンドの履歴（TSX銘柄コードまたはFundservコード）"
     },
     "instrumentLabels": {
+      "depositary_receipts": "預託証券",
       "stocks": "株式",
       "crypto": "暗号資産",
       "etfs": "ETF",

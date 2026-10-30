@@ -10,6 +10,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use log::{debug, warn};
@@ -24,6 +25,9 @@ use crate::models::{
 };
 use crate::provider::{MarketDataProvider, DATA_SOURCE_CUSTOM_SCRAPER};
 use crate::resolver::{check_profile, ResolutionSource, SymbolResolver};
+
+// Supplementary venue searches must not hold healthy general results for the HTTP timeout.
+const EXCHANGE_SEARCH_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn is_unverified_fallback(source: ResolutionSource) -> bool {
     source == ResolutionSource::RulesFallback
@@ -820,6 +824,77 @@ impl ProviderRegistry {
             });
         }
 
+        let (scoped, general): (Vec<_>, Vec<_>) = providers
+            .into_iter()
+            .partition(|provider| provider.capabilities().coverage.is_exchange_scoped());
+        let (searched, (extra, scoped_error)) = tokio::join!(
+            self.search_in_priority_order(&general, query),
+            self.search_exchange_scoped(&scoped, query)
+        );
+        match searched {
+            Ok(mut results) => {
+                for result in extra {
+                    if !results.iter().any(|existing| {
+                        existing.symbol.eq_ignore_ascii_case(&result.symbol)
+                            && existing.exchange_mic == result.exchange_mic
+                    }) {
+                        results.push(result);
+                    }
+                }
+                Ok(results)
+            }
+            Err(_) if !extra.is_empty() => Ok(extra),
+            Err(MarketDataError::AllProvidersFailed) => {
+                Err(scoped_error.unwrap_or(MarketDataError::AllProvidersFailed))
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn search_exchange_scoped(
+        &self,
+        providers: &[&Arc<dyn MarketDataProvider>],
+        query: &str,
+    ) -> (Vec<SearchResult>, Option<MarketDataError>) {
+        let mut results = Vec::new();
+        let mut last_error = None;
+        for provider in providers {
+            let id = Cow::Borrowed(provider.id());
+            // These are supplementary searches: never wait for a registry token.
+            if !self.circuit_breaker.is_allowed(&id) || !self.rate_limiter.try_acquire(&id) {
+                continue;
+            }
+            let result = tokio::time::timeout(EXCHANGE_SEARCH_TIMEOUT, provider.search(query))
+                .await
+                .unwrap_or_else(|_| {
+                    Err(MarketDataError::Timeout {
+                        provider: id.to_string(),
+                    })
+                });
+            match result {
+                Ok(found) => {
+                    self.circuit_breaker.record_success(&id);
+                    results.extend(found);
+                }
+                Err(error) => {
+                    if matches!(
+                        error.retry_class(),
+                        RetryClass::FailoverWithPenalty | RetryClass::CircuitOpen
+                    ) {
+                        self.circuit_breaker.record_failure(&id);
+                    }
+                    last_error = Some(error);
+                }
+            }
+        }
+        (results, last_error)
+    }
+
+    async fn search_in_priority_order(
+        &self,
+        providers: &[&Arc<dyn MarketDataProvider>],
+        query: &str,
+    ) -> Result<Vec<SearchResult>, MarketDataError> {
         let mut last_error: Option<MarketDataError> = None;
         let mut fallback_results: Option<Vec<SearchResult>> = None;
 
@@ -2775,6 +2850,8 @@ mod tests {
         id: &'static str,
         priority: u8,
         identifier_lookup: bool,
+        coverage: Coverage,
+        delay: Duration,
         results: Vec<SearchResult>,
         fails: bool,
         times_out: bool,
@@ -2787,6 +2864,8 @@ mod tests {
                 id,
                 priority,
                 identifier_lookup,
+                coverage: Coverage::global_best_effort(),
+                delay: Duration::ZERO,
                 results: symbols
                     .iter()
                     .map(|symbol| {
@@ -2829,7 +2908,7 @@ mod tests {
         fn capabilities(&self) -> ProviderCapabilities {
             ProviderCapabilities {
                 instrument_kinds: &[InstrumentKind::Equity],
-                coverage: Coverage::global_best_effort(),
+                coverage: self.coverage,
                 supports_latest: true,
                 supports_historical: true,
                 supports_search: !self.identifier_lookup,
@@ -2853,6 +2932,7 @@ mod tests {
 
         async fn search(&self, _query: &str) -> Result<Vec<SearchResult>, MarketDataError> {
             self.searches.fetch_add(1, Ordering::SeqCst);
+            tokio::time::sleep(self.delay).await;
             if self.times_out {
                 return Err(MarketDataError::Timeout {
                     provider: self.id.to_string(),
@@ -3009,5 +3089,79 @@ mod tests {
             .await
             .expect("lookups should not wait for rate-limit tokens");
         assert_eq!(amfi.searches(), 5);
+    }
+    fn moex_search_provider(symbols: &[&str]) -> SearchProvider {
+        let mut provider = SearchProvider::new("MOEX", 14, false, symbols);
+        provider.coverage = Coverage::moex();
+        for result in &mut provider.results {
+            result.exchange_mic = Some("MISX".to_string());
+        }
+        provider
+    }
+
+    #[tokio::test]
+    async fn search_merges_scoped_listings_without_changing_general_fallback_order() {
+        let yahoo = Arc::new(SearchProvider::new("YAHOO", 1, false, &["HYDR"]));
+        let fallback = Arc::new(SearchProvider::new("FALLBACK", 2, false, &["OTHER"]));
+        let moex = Arc::new(moex_search_provider(&["HYDR"]));
+        let registry = ProviderRegistry::new(
+            vec![moex.clone(), fallback.clone(), yahoo],
+            Arc::new(MockResolver),
+        );
+        let results = registry.search("HYDR").await.unwrap();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].data_source.as_deref(), Some("YAHOO"));
+        assert_eq!(results[1].exchange_mic.as_deref(), Some("MISX"));
+        assert_eq!(fallback.searches(), 0);
+        assert_eq!(moex.searches(), 1);
+    }
+
+    #[tokio::test]
+    async fn scoped_search_failure_is_isolated_and_scoped_only_search_works() {
+        let yahoo = Arc::new(SearchProvider::new("YAHOO", 1, false, &["AAPL"]));
+        let moex = Arc::new(moex_search_provider(&[]).failing());
+        let registry = ProviderRegistry::new(vec![yahoo, moex], Arc::new(MockResolver));
+        assert_eq!(
+            symbols(&registry.search("AAPL").await.unwrap()),
+            vec!["AAPL"]
+        );
+        let moex = Arc::new(moex_search_provider(&["AFLT"]));
+        let registry = ProviderRegistry::new(vec![moex], Arc::new(MockResolver));
+        assert_eq!(
+            symbols(&registry.search("AFLT").await.unwrap()),
+            vec!["AFLT"]
+        );
+    }
+
+    #[tokio::test]
+    async fn slow_scoped_search_has_a_bounded_wait_and_records_timeout() {
+        let yahoo = Arc::new(SearchProvider::new("YAHOO", 1, false, &["AAPL"]));
+        let mut moex = moex_search_provider(&[]);
+        moex.delay = EXCHANGE_SEARCH_TIMEOUT * 10;
+        let moex = Arc::new(moex);
+        let registry = ProviderRegistry::new(vec![yahoo, moex.clone()], Arc::new(MockResolver));
+        let results = tokio::time::timeout(
+            EXCHANGE_SEARCH_TIMEOUT + Duration::from_secs(1),
+            registry.search("AAPL"),
+        )
+        .await
+        .expect("slow supplementary provider must not hold the general result for its HTTP timeout")
+        .unwrap();
+        assert_eq!(symbols(&results), vec!["AAPL"]);
+        assert_eq!(moex.searches(), 1);
+    }
+
+    #[tokio::test]
+    async fn scoped_search_never_waits_for_a_rate_limit_token() {
+        let moex = Arc::new(moex_search_provider(&["AFLT"]));
+        let registry = ProviderRegistry::new(vec![moex.clone()], Arc::new(MockResolver));
+        assert_eq!(
+            symbols(&registry.search("AFLT").await.unwrap()),
+            vec!["AFLT"]
+        );
+        let result =
+            tokio::time::timeout(Duration::from_millis(100), registry.search("AFLT")).await;
+        assert!(result.is_ok());
+        assert_eq!(moex.searches(), 1);
     }
 }

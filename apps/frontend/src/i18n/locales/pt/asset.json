@@ -234,6 +234,8 @@
     }
   },
   "editSheet": {
+    "moex_symbol_placeholder": "ex.: SBER, AFLT",
+    "moex_symbol_hint": "Use um código de título da MOEX sem prefixo ou sufixo. Defina a bolsa como Moscow Exchange (MISX).",
     "identity_conflict": "Outro ativo já tem esta identidade. As alterações não foram guardadas. Utilize o ativo existente ou escolha outra bolsa.",
     "general": "Geral",
     "classification": "Classificação",

@@ -104,13 +104,14 @@ impl ProviderCapabilities {
                 ],
             }),
             "MOEX" => Some(Self {
-                instruments: "Stocks • ETFs • DRs".to_string(),
+                instruments: "Stocks • ETFs • Funds • DRs".to_string(),
                 coverage: "MISX".to_string(),
                 features: vec![
                     "Real-time".to_string(),
                     "Historical".to_string(),
                     "Search".to_string(),
                     "Profiles".to_string(),
+                    "Splits".to_string(),
                 ],
             }),
             "OPENFIGI" => Some(Self {

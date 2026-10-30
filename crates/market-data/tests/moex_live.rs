@@ -38,7 +38,27 @@ async fn moex_search_profile_latest_and_paged_history() {
             .iter()
             .any(|r| r.symbol == "AFLT" && r.exchange_mic.as_deref() == Some("MISX")));
 
+        let mail_results = provider.search("MAIL").await.unwrap();
+        assert!(mail_results
+            .iter()
+            .any(|r| r.symbol == "MAIL" && r.exchange_mic.as_deref() == Some("MISX")));
         let profile = provider.get_profile("AFLT").await.unwrap();
+        assert_eq!(profile.currency.as_deref(), Some("RUB"));
+        assert!(
+            profile.country.is_none(),
+            "do not infer domicile from listing venue"
+        );
+        let splits = provider
+            .get_splits(
+                &context("VTBR"),
+                symbol("VTBR"),
+                Utc.with_ymd_and_hms(2024, 7, 1, 0, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2024, 7, 31, 0, 0, 0).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(splits.len(), 1);
+        assert_eq!(splits[0].ratio, Decimal::new(2, 4));
         assert_eq!(profile.isin.as_deref(), Some("RU0009062285"));
 
         let latest = provider

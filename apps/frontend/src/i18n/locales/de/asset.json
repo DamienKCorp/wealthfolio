@@ -234,6 +234,8 @@
     }
   },
   "editSheet": {
+    "moex_symbol_placeholder": "z. B. SBER, AFLT",
+    "moex_symbol_hint": "Verwenden Sie eine MOEX-Wertpapierkennung ohne Präfix oder Suffix. Wählen Sie Moscow Exchange (MISX) als Börse.",
     "identity_conflict": "Ein anderer Vermögenswert hat bereits diese Identität. Ihre Änderungen wurden nicht gespeichert. Verwenden Sie den vorhandenen Vermögenswert oder wählen Sie einen anderen Handelsplatz.",
     "general": "Allgemein",
     "classification": "Klassifizierung",

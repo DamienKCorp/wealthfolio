@@ -196,6 +196,8 @@ function ProviderSettings({
         label: t("settings:market_data_page.feature_profiles"),
       };
     }
+    if (normalized === "splits")
+      return { icon: null, label: t("settings:market_data_page.feature_splits") };
     if (normalized === "dividends")
       return { icon: null, label: t("settings:market_data_page.feature_dividends") };
     if (normalized === "no api key")

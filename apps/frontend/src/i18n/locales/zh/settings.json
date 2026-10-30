@@ -818,6 +818,7 @@
     "import_quotes_count_other": "导入 {{count}} 条报价",
     "imported_count_other": "已导入 {{count}} 条",
     "failed_count_other": "失败 {{count}} 条",
+    "feature_splits": "股票拆分",
     "feature_dividends": "股息",
     "coverageLabels": {
       "User-defined": "用户自定义",
@@ -829,6 +830,7 @@
     "feature_no_api_key": "无需 API 密钥",
     "us_treasury_name": "美国财政部（计算）",
     "providerDescriptions": {
+      "MOEX": "Moscow Exchange ISS 提供 MOEX 上交易的股票、存托凭证和 ETF 的延迟行情及收盘价。无需 API 密钥。",
       "YAHOO": "Yahoo Finance 提供多个市场的历史及实时股票数据。",
       "MARKETDATA_APP": "MarketData.app 提供美国股票、期权、ETF、共同基金等的实时和历史数据。",
       "ALPHA_VANTAGE": "Alpha Vantage 为股票、外汇和加密货币的实时和历史数据提供免费的 API。",
@@ -854,6 +856,7 @@
       "canadian_stock_fund_history_tsx_symbol_or_fundserv_code": "加拿大股票和基金历史数据（TSX 股票代码或 Fundserv 代码）"
     },
     "instrumentLabels": {
+      "depositary_receipts": "存托凭证",
       "stocks": "股票",
       "crypto": "加密货币",
       "etfs": "ETF",
