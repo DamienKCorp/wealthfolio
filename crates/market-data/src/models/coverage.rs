@@ -31,6 +31,13 @@ fn slice_contains(list: &[&'static str], value: &str) -> bool {
 }
 
 impl Coverage {
+    /// Whether only listed exchanges are covered and a bare ticker never is.
+    /// General search providers rarely index such a venue's listings, so the
+    /// registry searches these providers alongside them, not as a fallback.
+    pub const fn is_exchange_scoped(&self) -> bool {
+        self.equity_mic_allow.is_some() && !self.allow_unknown_mic
+    }
+
     /// Check if this coverage supports the given instrument.
     pub fn supports(&self, inst: &InstrumentId) -> bool {
         match inst {
@@ -288,6 +295,8 @@ mod tests {
         assert!(coverage.supports(&misx));
         assert!(!coverage.supports(&xpar));
         assert!(!coverage.supports(&bare));
+        assert!(coverage.is_exchange_scoped());
+        assert!(!Coverage::global_best_effort().is_exchange_scoped());
     }
 
     #[test]

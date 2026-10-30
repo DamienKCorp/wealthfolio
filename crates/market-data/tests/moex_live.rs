@@ -74,6 +74,31 @@ async fn moex_search_profile_latest_and_paged_history() {
             .unwrap();
         assert_eq!(mail.len(), 3);
 
+        // A one-day request spanning the whole UTC day returns that day only.
+        let day = provider
+            .get_historical_quotes(
+                &context("AFLT"),
+                symbol("AFLT"),
+                Utc.with_ymd_and_hms(2020, 2, 26, 0, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2020, 2, 26, 23, 59, 59).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(day.len(), 1);
+        assert_eq!(day[0].timestamp.date_naive().to_string(), "2020-02-26");
+
+        // Before the 2013 move to T+ settlement, shares traded on EQBR.
+        let t0 = provider
+            .get_historical_quotes(
+                &context("AFLT"),
+                symbol("AFLT"),
+                Utc.with_ymd_and_hms(2010, 3, 1, 0, 0, 0).unwrap(),
+                Utc.with_ymd_and_hms(2010, 3, 31, 0, 0, 0).unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(t0.len() >= 20, "got {} bars", t0.len());
+
         assert!(provider
             .get_latest_quote(&context("NOSUCHSECID"), symbol("NOSUCHSECID"))
             .await

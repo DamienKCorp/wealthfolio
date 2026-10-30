@@ -5387,6 +5387,48 @@ mod tests {
         assert_eq!(output.provider_symbol.as_deref(), Some("ACME-B"));
     }
 
+    /// HYDR is RusHydro on MOEX and a hydrogen ETF on Nasdaq. With both
+    /// listings in the search results, the activity currency picks the venue.
+    #[tokio::test]
+    async fn test_resolve_import_asset_inputs_uses_currency_to_pick_moex_listing() {
+        let mut nasdaq = yahoo_search_result(
+            "HYDR",
+            "HYDR",
+            "XNAS",
+            "Global X Hydrogen ETF",
+            "USD",
+            "HYDR",
+        );
+        nasdaq.quote_type = "ETF".to_string();
+        nasdaq.score = 20_000.0;
+        let mut moex = yahoo_search_result("HYDR", "HYDR", "MISX", "RusHydro", "RUB", "HYDR");
+        moex.provider_id = Some("MOEX".to_string());
+        moex.data_source = Some("MOEX".to_string());
+        moex.score = 0.0;
+        let service = test_asset_service(
+            Vec::new(),
+            TestQuoteService::default().with_result("HYDR", vec![nasdaq, moex]),
+        );
+
+        let resolved = |currency: &'static str| {
+            let service = &service;
+            async move {
+                service
+                    .resolve_import_asset_inputs(vec![import_input("HYDR", currency)])
+                    .await
+                    .unwrap()
+                    .pop()
+                    .unwrap()
+            }
+        };
+
+        let rub = resolved("RUB").await;
+        assert_eq!(rub.exchange_mic.as_deref(), Some("MISX"));
+        assert_eq!(rub.name.as_deref(), Some("RusHydro"));
+        let usd = resolved("USD").await;
+        assert_eq!(usd.exchange_mic.as_deref(), Some("XNAS"));
+    }
+
     #[tokio::test]
     async fn test_resolve_import_asset_inputs_existing_isin_returns_canonical_identity() {
         let existing = Asset {

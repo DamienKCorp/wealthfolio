@@ -8,9 +8,9 @@
 //!
 //! ISS answers every endpoint with named tables (`{"history": {"columns": [..],
 //! "data": [[..], ..]}}`), pages history 100 rows at a time and lists one row
-//! per trading board. Only the main T+ order-book boards carry the price a
-//! holder cares about; odd-lot (`SMAL`) and settlement (`SPEQ`) boards are
-//! ignored.
+//! per trading board. Only the regular order-book boards carry the price a
+//! holder cares about; odd-lot (`SMAL`), block-trade (`EQDP`), central
+//! counterparty (`EQCC`) and settlement (`SPEQ`) boards are ignored.
 
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
@@ -46,20 +46,45 @@ const MOSCOW_UTC_OFFSET_SECS: i32 = 3 * 3600;
 /// of daily bars so their date is the trading date in every common timezone.
 const SESSION_CLOSE: (u32, u32) = (18, 50);
 
-/// Main T+ order-book boards of the shares market, in preference order.
-/// A security trades on one of them at a time, but boards change over its
-/// life (a fund can move from `TQTF` to `TQBR`), so history is merged per
-/// trading date.
-const MAIN_BOARDS: &[&str] = &[
-    "TQBR", // shares and depositary receipts
-    "TQTF", // ETFs
-    "TQIF", // mutual fund units
-    "TQTD", // ETFs in USD
-    "TQTE", // ETFs in EUR
-    "TQTY", // fund units in CNY
-    "TQFD", // fund units in USD
-    "TQFE", // fund units in EUR
-    "TQTH", // fund units in HKD
+/// Regular order-book boards of the shares market and their trading currency,
+/// in preference order. A security trades on one of them at a time, but
+/// boards change over its life (a fund can move from `TQTF` to `TQBR`, and
+/// before the 2013 move to T+ settlement shares traded on the `EQ*` boards),
+/// so history is merged per trading date.
+const MAIN_BOARDS: &[(&str, &str)] = &[
+    // T+ boards traded today.
+    ("TQBR", "RUB"), // shares and depositary receipts
+    ("TQTF", "RUB"), // ETFs
+    ("TQIF", "RUB"), // mutual fund units
+    ("TQTD", "USD"), // ETFs in USD
+    ("TQTE", "EUR"), // ETFs in EUR
+    ("TQTY", "CNY"), // fund units in CNY
+    ("TQFD", "USD"), // fund units in USD
+    ("TQFE", "EUR"), // fund units in EUR
+    ("TQTH", "HKD"), // fund units in HKD
+    // Retired T+ boards: listing tiers merged into TQBR, high-risk shares.
+    ("TQBS", "RUB"), // A2 tier
+    ("TQNL", "RUB"), // B tier
+    ("TQLV", "RUB"), // V tier and depositary receipts
+    ("TQNE", "RUB"), // unlisted shares
+    ("TQDE", "RUB"), // D shares
+    ("TQLI", "RUB"), // I shares
+    ("TQBE", "EUR"), // shares in EUR
+    ("TQPI", "RUB"), // high-risk shares
+    ("TQPD", "USD"), // high-risk shares in USD
+    ("TQPE", "EUR"), // high-risk shares in EUR
+    ("TQPY", "CNY"), // high-risk shares in CNY
+    ("TQPH", "HKD"), // high-risk shares in HKD
+    // Retired T0 boards, the main market until 2013.
+    ("EQBR", "RUB"), // A1 tier
+    ("EQBS", "RUB"), // A2 tier
+    ("EQNL", "RUB"), // B tier
+    ("EQLV", "RUB"), // V tier and depositary receipts
+    ("EQNE", "RUB"), // unlisted shares
+    ("EQDE", "RUB"), // D shares
+    ("EQLI", "RUB"), // I shares
+    ("EQTD", "USD"), // ETFs in USD
+    ("EQTU", "EUR"), // ETFs in EUR
 ];
 
 // ---------------------------------------------------------------------------
@@ -157,7 +182,19 @@ fn iss_currency(code: Option<&str>) -> String {
 fn main_board_rank(board: &str) -> Option<usize> {
     MAIN_BOARDS
         .iter()
-        .position(|main| main.eq_ignore_ascii_case(board))
+        .position(|(main, _)| main.eq_ignore_ascii_case(board))
+}
+
+fn main_board_currency(board: &str) -> Option<&'static str> {
+    main_board_rank(board).map(|rank| MAIN_BOARDS[rank].1)
+}
+
+/// Calendar dates of a history request. Daily bars are stamped 15:50 UTC on
+/// their trading date (see `session_close_utc`), so the UTC dates of the range
+/// are exactly the trading dates it covers. Converting to Moscow time instead
+/// would turn a range ending late in the UTC day into the next trading day.
+fn history_dates(start: DateTime<Utc>, end: DateTime<Utc>) -> (NaiveDate, NaiveDate) {
+    (start.date_naive(), end.date_naive())
 }
 
 /// Rank a board for a quote: boards trading in the hinted currency first,
@@ -358,7 +395,7 @@ fn search_results_from_table(securities: &IssTable) -> Vec<SearchResult> {
         .filter(|row| row.int("is_traded") == Some(1))
         .filter_map(|row| {
             let board = row.text("primary_boardid")?;
-            main_board_rank(board)?;
+            let currency = main_board_currency(board)?;
             let secid = row.text("secid")?;
             let name = row
                 .text("name")
@@ -369,6 +406,7 @@ fn search_results_from_table(securities: &IssTable) -> Vec<SearchResult> {
                 SearchResult::new(secid.to_string(), name.to_string(), "MOEX", asset_type)
                     .with_exchange_mic(MIC)
                     .with_exchange_name("Moscow Exchange")
+                    .with_currency(currency)
                     .with_data_source(PROVIDER_ID),
             )
         })
@@ -558,8 +596,7 @@ impl MarketDataProvider for MoexProvider {
         end: DateTime<Utc>,
     ) -> Result<Vec<Quote>, MarketDataError> {
         let secid = secid_from_instrument(&instrument)?;
-        let from = start.with_timezone(&moscow()).date_naive();
-        let till = end.with_timezone(&moscow()).date_naive();
+        let (from, till) = history_dates(start, end);
         if from > till {
             return Ok(Vec::new());
         }
@@ -810,6 +847,60 @@ mod tests {
     }
 
     #[test]
+    fn history_boards_include_retired_regular_boards() {
+        // HYDR before the 2013 move to T+ settlement, trimmed real ISS boards.
+        let response = parse(
+            r#"{"boards": {
+                "columns": ["boardid","market","engine","history_from","history_till"],
+                "data": [
+                    ["TQBR","shares","stock","2013-03-25","2026-10-29"],
+                    ["EQBR","shares","stock","2008-08-22","2013-08-30"],
+                    ["EQNL","shares","stock","2008-06-03","2008-08-21"],
+                    ["SMAL","shares","stock","2008-05-22","2026-10-29"],
+                    ["EQDP","shares","stock","2011-12-12","2019-03-01"],
+                    ["EQCC","shares","stock","2010-02-15","2011-05-27"]
+                ]}}"#,
+        );
+        let boards = &response["boards"];
+        let date = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        assert_eq!(
+            history_boards(boards, date("2008-01-01"), date("2010-12-31")),
+            vec!["EQBR".to_string(), "EQNL".to_string()]
+        );
+        // While both boards traded in 2013, the T+ board wins each date.
+        assert_eq!(
+            history_boards(boards, date("2013-06-01"), date("2013-06-30")),
+            vec!["TQBR".to_string(), "EQBR".to_string()]
+        );
+        let response = parse(
+            r#"{"history": {
+                "columns": ["BOARDID","TRADEDATE","CLOSE","CURRENCYID"],
+                "data": [
+                    ["EQBR","2013-06-03",0.98,"SUR"],
+                    ["TQBR","2013-06-03",0.97,"SUR"]
+                ]}}"#,
+        );
+        let mut merged = BTreeMap::new();
+        merge_history_rows(response["history"].rows(), Some("RUB"), &mut merged);
+        assert_eq!(
+            merged.values().next().unwrap().1.close,
+            Decimal::from_str("0.97").unwrap()
+        );
+    }
+
+    #[test]
+    fn history_dates_stay_on_the_utc_calendar() {
+        // A one-day request spanning the whole UTC day is still one trading
+        // date, although its end is already the next day in Moscow.
+        let start = Utc.with_ymd_and_hms(2026, 10, 27, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 10, 27, 23, 59, 59).unwrap();
+        let day = NaiveDate::from_ymd_opt(2026, 10, 27).unwrap();
+        assert_eq!(history_dates(start, end), (day, day));
+        // The bar of that date falls inside the requested UTC range.
+        assert_eq!(session_close_utc(day).date_naive(), day);
+    }
+
+    #[test]
     fn latest_quote_prefers_last_trade_on_main_board() {
         let response = parse(
             r#"{
@@ -883,6 +974,7 @@ mod tests {
         assert_eq!(results[0].exchange_mic.as_deref(), Some("MISX"));
         assert_eq!(results[0].asset_type, "EQUITY");
         assert_eq!(results[0].data_source.as_deref(), Some("MOEX"));
+        assert_eq!(results[0].currency.as_deref(), Some("RUB"));
         assert_eq!(results[1].asset_type, "ETF");
     }
 
