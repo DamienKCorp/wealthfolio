@@ -860,17 +860,26 @@ impl ProviderRegistry {
         let mut last_error = None;
         for provider in providers {
             let id = Cow::Borrowed(provider.id());
-            // These are supplementary searches: never wait for a registry token.
-            if !self.circuit_breaker.is_allowed(&id) || !self.rate_limiter.try_acquire(&id) {
+            if !self.circuit_breaker.is_allowed(&id) {
                 continue;
             }
-            let result = tokio::time::timeout(EXCHANGE_SEARCH_TIMEOUT, provider.search(query))
-                .await
-                .unwrap_or_else(|_| {
-                    Err(MarketDataError::Timeout {
+            // Imports search sequential rows: wait for a token rather than
+            // dropping the venue candidate just because the burst is exhausted.
+            let request = async {
+                self.rate_limiter.acquire(&id).await;
+                provider.search(query).await
+            };
+            let result = match tokio::time::timeout(EXCHANGE_SEARCH_TIMEOUT, request).await {
+                Ok(result) => result,
+                Err(_) => {
+                    // This UI budget is shorter than the provider HTTP timeout.
+                    // Its expiry says nothing about quote-sync health.
+                    last_error = Some(MarketDataError::Timeout {
                         provider: id.to_string(),
-                    })
-                });
+                    });
+                    continue;
+                }
+            };
             match result {
                 Ok(found) => {
                     self.circuit_breaker.record_success(&id);
@@ -3134,12 +3143,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn slow_scoped_search_has_a_bounded_wait_and_records_timeout() {
+    async fn slow_scoped_search_budget_does_not_penalize_quote_sync() {
         let yahoo = Arc::new(SearchProvider::new("YAHOO", 1, false, &["AAPL"]));
         let mut moex = moex_search_provider(&[]);
         moex.delay = EXCHANGE_SEARCH_TIMEOUT * 10;
         let moex = Arc::new(moex);
-        let registry = ProviderRegistry::new(vec![yahoo, moex.clone()], Arc::new(MockResolver));
+        let mut registry = ProviderRegistry::new(vec![yahoo, moex.clone()], Arc::new(MockResolver));
+        registry.circuit_breaker =
+            CircuitBreaker::with_config(crate::registry::circuit_breaker::CircuitBreakerConfig {
+                failure_threshold: 1,
+                ..Default::default()
+            });
         let results = tokio::time::timeout(
             EXCHANGE_SEARCH_TIMEOUT + Duration::from_secs(1),
             registry.search("AAPL"),
@@ -3149,19 +3163,26 @@ mod tests {
         .unwrap();
         assert_eq!(symbols(&results), vec!["AAPL"]);
         assert_eq!(moex.searches(), 1);
+        assert!(!registry.is_circuit_open(&Cow::Borrowed("MOEX")));
     }
 
     #[tokio::test]
-    async fn scoped_search_never_waits_for_a_rate_limit_token() {
-        let moex = Arc::new(moex_search_provider(&["AFLT"]));
+    async fn scoped_search_waits_for_tokens_without_dropping_sequential_import_candidates() {
+        let moex = Arc::new(moex_search_provider(&["HYDR"]));
         let registry = ProviderRegistry::new(vec![moex.clone()], Arc::new(MockResolver));
-        assert_eq!(
-            symbols(&registry.search("AFLT").await.unwrap()),
-            vec!["AFLT"]
+        registry.rate_limiter.configure(
+            &Cow::Borrowed("MOEX"),
+            RateLimitConfig {
+                requests_per_minute: 6000,
+                burst_capacity: 1.0,
+            },
         );
-        let result =
-            tokio::time::timeout(Duration::from_millis(100), registry.search("AFLT")).await;
-        assert!(result.is_ok());
-        assert_eq!(moex.searches(), 1);
+        for _ in 0..5 {
+            assert_eq!(
+                symbols(&registry.search("HYDR").await.unwrap()),
+                vec!["HYDR"]
+            );
+        }
+        assert_eq!(moex.searches(), 5);
     }
 }

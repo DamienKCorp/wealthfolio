@@ -1113,6 +1113,7 @@ mod tests {
         assert!(quotes[0].close > "0.9".parse().unwrap());
         assert!(quotes[0].close < "1.1".parse().unwrap());
     }
+
     #[tokio::test]
     async fn moex_fixture_keeps_search_profile_quotes_and_coverage_consistent() {
         let provider = FixtureProvider::new_for_provider(

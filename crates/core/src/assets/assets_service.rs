@@ -6206,6 +6206,7 @@ mod tests {
             ..Default::default()
         }
     }
+
     #[tokio::test]
     async fn test_delisted_moex_import_avoids_foreign_ticker_collision() {
         let foreign = yahoo_search_result(
