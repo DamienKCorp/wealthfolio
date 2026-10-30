@@ -119,7 +119,10 @@ test("disabled MOEX provider contributes no search results", async ({ page }) =>
       ).ok(),
     ).toBeTruthy();
     const search = await page.request.get(`${BASE_URL}/api/v1/market-data/search?query=MAIL`);
-    expect(await search.json()).not.toEqual(
+    expect(search.ok()).toBeTruthy();
+    const results = await search.json();
+    expect(Array.isArray(results)).toBe(true);
+    expect(results).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ providerId: "MOEX" })]),
     );
   } finally {

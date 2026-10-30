@@ -873,15 +873,21 @@ impl ProviderRegistry {
             }
             // Imports search sequential rows: wait for a token rather than
             // dropping the venue candidate just because the burst is exhausted.
+            let mut search_started = false;
             let request = async {
                 self.rate_limiter.acquire(&id).await;
+                search_started = true;
                 provider.search(query).await
             };
-            let result = match tokio::time::timeout(EXCHANGE_SEARCH_TIMEOUT, request).await {
+            let response = tokio::time::timeout(EXCHANGE_SEARCH_TIMEOUT, request).await;
+            let result = match response {
                 Ok(result) => result,
                 Err(_) => {
-                    // Back off repeated search delays, without affecting prices.
-                    self.circuit_breaker.record_failure(&search_id);
+                    // Local quota contention is not evidence of provider failure.
+                    // Only an attempted search can penalize the search circuit.
+                    if search_started {
+                        self.circuit_breaker.record_failure(&search_id);
+                    }
                     last_error = Some(MarketDataError::Timeout {
                         provider: id.to_string(),
                     });
@@ -3206,5 +3212,66 @@ mod tests {
             );
         }
         assert_eq!(moex.searches(), 5);
+    }
+
+    #[tokio::test]
+    async fn scoped_search_token_wait_timeout_does_not_open_search_circuit() {
+        let moex = Arc::new(moex_search_provider(&["HYDR"]));
+        let mut registry = ProviderRegistry::new(vec![moex.clone()], Arc::new(MockResolver));
+        registry.circuit_breaker =
+            CircuitBreaker::with_config(crate::registry::circuit_breaker::CircuitBreakerConfig {
+                failure_threshold: 1,
+                ..Default::default()
+            });
+        registry.rate_limiter.configure(
+            &Cow::Borrowed("MOEX"),
+            RateLimitConfig {
+                requests_per_minute: 1,
+                burst_capacity: 1.0,
+            },
+        );
+        assert!(registry.rate_limiter.try_acquire(&Cow::Borrowed("MOEX")));
+
+        assert!(matches!(
+            registry.search("HYDR").await,
+            Err(MarketDataError::Timeout { .. })
+        ));
+        assert_eq!(moex.searches(), 0);
+        assert!(!registry.is_circuit_open(&search_circuit_id("MOEX")));
+        assert!(!registry.is_circuit_open(&Cow::Borrowed("MOEX")));
+    }
+
+    #[tokio::test]
+    async fn scoped_search_token_wait_and_request_share_one_timeout_budget() {
+        let mut moex = moex_search_provider(&[]);
+        moex.delay = EXCHANGE_SEARCH_TIMEOUT * 10;
+        let moex = Arc::new(moex);
+        let mut registry = ProviderRegistry::new(vec![moex.clone()], Arc::new(MockResolver));
+        registry.circuit_breaker =
+            CircuitBreaker::with_config(crate::registry::circuit_breaker::CircuitBreakerConfig {
+                failure_threshold: 1,
+                ..Default::default()
+            });
+        registry.rate_limiter.configure(
+            &Cow::Borrowed("MOEX"),
+            RateLimitConfig {
+                requests_per_minute: 60,
+                burst_capacity: 1.0,
+            },
+        );
+        assert!(registry.rate_limiter.try_acquire(&Cow::Borrowed("MOEX")));
+
+        // Acquiring the next token takes one second. A fresh two-second
+        // request timeout would exceed this bound; the shared budget does not.
+        let result = tokio::time::timeout(
+            EXCHANGE_SEARCH_TIMEOUT + Duration::from_millis(500),
+            registry.search("HYDR"),
+        )
+        .await
+        .expect("token waiting must not extend the overall search budget");
+        assert!(matches!(result, Err(MarketDataError::Timeout { .. })));
+        assert_eq!(moex.searches(), 1);
+        assert!(registry.is_circuit_open(&search_circuit_id("MOEX")));
+        assert!(!registry.is_circuit_open(&Cow::Borrowed("MOEX")));
     }
 }
